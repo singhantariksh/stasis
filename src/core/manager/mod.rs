@@ -125,6 +125,11 @@ impl Manager {
             .position(|a| a.last_triggered.is_none())
             .unwrap_or(actions.len().saturating_sub(1));
 
+        // Reset action_index
+        if !self.state.lock_state.is_locked {
+            self.state.action_index = 0;
+        }
+
         if !actions.is_empty() && actions[index].is_instant() {
             return;
         }
@@ -323,6 +328,27 @@ impl Manager {
         self.state.lock_state.last_advanced = Some(Instant::now());
     }
 
+    pub fn set_post_lock_debounce(&mut self) {
+        let now = Instant::now();
+        if let Some(cfg) = &self.state.cfg {
+            let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
+            self.state.debounce = Some(now + debounce);
+
+            // Also mark the next action's last_triggered if we're past lock
+            let actions = match self.state.current_block.as_deref() {
+                Some("ac") => &mut self.state.ac_actions,
+                Some("battery") => &mut self.state.battery_actions,
+                _ => &mut self.state.default_actions,
+            };
+
+            if self.state.action_index < actions.len() {
+                actions[self.state.action_index].last_triggered = Some(now + debounce);
+            }
+        }
+
+        self.state.notify.notify_one();
+    }
+
     pub async fn pause(&mut self, manual: bool) {
         if manual {
             self.state.manually_paused = true;
@@ -507,7 +533,9 @@ pub async fn spawn_lock_watcher(manager: Arc<Mutex<Manager>>) -> JoinHandle<()> 
                     mgr.state.lock_state.post_advanced = false;
                     mgr.state.action_index = 0;
                     mgr.state.lock_state.is_locked = false;
-                    mgr.state.notify.notify_one();
+
+                    mgr.set_post_lock_debounce();
+
                     log_message("Lockscreen ended — exiting lock watcher");
                     break;
                 }
