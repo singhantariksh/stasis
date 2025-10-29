@@ -14,7 +14,7 @@ pub use self::state::ManagerState;
 use crate::{
     config::model::{IdleAction, StasisConfig}, 
     core::manager::{
-        actions::{is_process_running, run_command_detached},
+        actions::{is_process_running, run_command_detached, run_command_silent},
         helpers::{restore_brightness, run_action}, 
     }, 
     log::log_message
@@ -295,20 +295,14 @@ impl Manager {
             self.state.suspend_occured = true;
         }
 
-        let mut has_pre_suspend = false;
-
         if let Some(cmd) = &self.state.pre_suspend_command {
-            has_pre_suspend = true;
-            let cmd = cmd.clone();
-            
-            if let Err(e) = run_command_detached(&cmd).await {
-                log_message(&format!("Pre-suspemd command failed: {}", e));
+            log_message(&format!("Running pre-suspend command: {}", cmd));
 
+            // Wait for it to finish (synchronous)
+            match run_command_silent(cmd).await {
+                Ok(_) => log_message("Pre-suspend command finished"),
+                Err(e) => log_message(&format!("Pre-suspend command failed: {}", e)),
             }
-        }
-
-        if has_pre_suspend {
-           sleep(Duration::from_millis(700)).await;
         }
     }
 

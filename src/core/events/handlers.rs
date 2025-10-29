@@ -7,7 +7,7 @@ use crate::log::log_message;
 pub enum Event {
     InputActivity,
     MediaPlaybackActive,
-    MediaPlaybakcEnded,
+    MediaPlaybackEnded,
     ACConnected,
     ACDisconnected,
     LockScreenDetected,
@@ -74,7 +74,7 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
             wake_idle_tasks(&mgr.state)
         }
 
-        Event::MediaPlaybakcEnded => {
+        Event::MediaPlaybackEnded => {
             let mut mgr = manager.lock().await;
             mgr.resume(false).await;
             wake_idle_tasks(&mgr.state);
