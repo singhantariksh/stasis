@@ -33,10 +33,8 @@ pub async fn spawn_ipc_socket_with_listener(
                     let app_inhibitor = Arc::clone(&app_inhibitor);
                     let cfg_path = cfg_path.clone();
                     
-                    // Spawn EACH connection in its own task with timeout
                     tokio::spawn(async move {
-                        // Wrap entire handler in timeout to prevent hanging
-                        let result = timeout(Duration::from_secs(5), async {
+                        let result = timeout(Duration::from_secs(10), async {
                             let mut buf = vec![0u8; 256];
                             match stream.read(&mut buf).await {
                                 Ok(n) if n > 0 => {
@@ -140,41 +138,83 @@ pub async fn spawn_ipc_socket_with_listener(
                                         "info" | "info --json" => {
                                             let as_json = cmd.contains("--json");
 
-                                            let mgr = manager.lock().await;
-                                            let idle_time = mgr.state.last_activity_display.elapsed();
-                                            let uptime = mgr.state.start_time.elapsed();
-                                            let mut inhibitor = app_inhibitor.lock().await;
-                                            let app_blocking = inhibitor.is_any_app_running().await;
-                                            let manually_inhibited = mgr.state.manually_paused;
-                                            let idle_inhibited = mgr.state.paused || app_blocking || mgr.state.manually_paused;
+                                            // Use try_lock with retry for info command to avoid blocking
+                                            let mut retry_count = 0;
+                                            let max_retries = 5;
+                                            
+                                            loop {
+                                                match manager.try_lock() {
+                                                    Ok(mgr) => {
+                                                        let idle_time = mgr.state.last_activity_display.elapsed();
+                                                        let uptime = mgr.state.start_time.elapsed();
+                                                        let manually_inhibited = mgr.state.manually_paused;
+                                                        let paused = mgr.state.paused;
+                                                        let cfg_clone = mgr.state.cfg.clone();
+                                                        
+                                                        // Release manager lock before acquiring app_inhibitor lock
+                                                        drop(mgr);
+                                                        
+                                                        // Try to get app blocking status with timeout
+                                                        let app_blocking = match timeout(
+                                                            Duration::from_millis(100),
+                                                            async {
+                                                                let mut inhibitor = app_inhibitor.lock().await;
+                                                                inhibitor.is_any_app_running().await
+                                                            }
+                                                        ).await {
+                                                            Ok(result) => result,
+                                                            Err(_) => false, // Timeout, assume no blocking
+                                                        };
+                                                        
+                                                        let idle_inhibited = paused || app_blocking || manually_inhibited;
 
-                                            if as_json {
-                                                let icon = if mgr.state.manually_paused {
-                                                    "manually_inhibited"
-                                                } else if idle_inhibited {
-                                                    "idle_inhibited"
-                                                } else {
-                                                    "idle_active"
-                                                };
+                                                        break if as_json {
+                                                            let icon = if manually_inhibited {
+                                                                "manually_inhibited"
+                                                            } else if idle_inhibited {
+                                                                "idle_inhibited"
+                                                            } else {
+                                                                "idle_active"
+                                                            };
 
-                                                serde_json::json!({
-                                                    "text": "",
-                                                    "alt": icon,
-                                                    "tooltip": format!(
-                                                        "{}\nIdle time: {}s\nUptime: {}s\nPaused: {}\nManually paused: {}\nApp blocking: {}",
-                                                        if idle_inhibited { "Idle inhibited" } else { "Idle active" },
-                                                        idle_time.as_secs(),
-                                                        uptime.as_secs(),
-                                                        mgr.state.paused,
-                                                        mgr.state.manually_paused,
-                                                        app_blocking
-                                                    )
-                                                })
-                                                .to_string()
-                                            } else if let Some(cfg) = &mgr.state.cfg {
-                                                cfg.pretty_print(Some(idle_time), Some(uptime), Some(idle_inhibited), Some(manually_inhibited))
-                                            } else {
-                                                "No configuration loaded".to_string()
+                                                            serde_json::json!({
+                                                                "text": "",
+                                                                "alt": icon,
+                                                                "tooltip": format!(
+                                                                    "{}\nIdle time: {}s\nUptime: {}s\nPaused: {}\nManually paused: {}\nApp blocking: {}",
+                                                                    if idle_inhibited { "Idle inhibited" } else { "Idle active" },
+                                                                    idle_time.as_secs(),
+                                                                    uptime.as_secs(),
+                                                                    paused,
+                                                                    manually_inhibited,
+                                                                    app_blocking
+                                                                )
+                                                            })
+                                                            .to_string()
+                                                        } else if let Some(cfg) = &cfg_clone {
+                                                            cfg.pretty_print(Some(idle_time), Some(uptime), Some(idle_inhibited), Some(manually_inhibited))
+                                                        } else {
+                                                            "No configuration loaded".to_string()
+                                                        };
+                                                    }
+                                                    Err(_) => {
+                                                        // Lock is held, retry with small delay
+                                                        retry_count += 1;
+                                                        if retry_count >= max_retries {
+                                                            // Give up and return a timeout response
+                                                            break if as_json {
+                                                                serde_json::json!({
+                                                                    "text": "",
+                                                                    "alt": "not_running",
+                                                                    "tooltip": "Busy, try again"
+                                                                }).to_string()
+                                                            } else {
+                                                                "Manager is busy, try again".to_string()
+                                                            };
+                                                        }
+                                                        tokio::time::sleep(Duration::from_millis(20)).await;
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -209,7 +249,7 @@ pub async fn spawn_ipc_socket_with_listener(
                         }).await;
                         
                         if result.is_err() {
-                            log_error_message("IPC connection timed out after 5 seconds");
+                            log_error_message("IPC connection timed out after 10 seconds");
                         }
                         
                         // Ensure stream is properly shut down
