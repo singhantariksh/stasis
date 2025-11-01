@@ -19,7 +19,7 @@ use crate::{
     cli::Command,
     config::parser::load_config,
     core::{
-        manager::{spawn_idle_task, spawn_lock_watcher, Manager}, 
+        manager::{idle_loops::{spawn_idle_task, spawn_lock_watcher}, Manager}, 
         services::{
             app_inhibit::{AppInhibitor, spawn_app_inhibit_task},
             dbus::listen_for_power_events, 

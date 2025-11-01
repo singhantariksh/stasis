@@ -2,7 +2,7 @@ use std::sync::Arc;
 use eyre::Result;
 use mpris::{PlayerFinder, PlaybackStatus};
 use tokio::task;
-use crate::core::manager::Manager;
+use crate::core::manager::{helpers::{decr_active_inhibitor, incr_active_inhibitor}, Manager};
 
 const IGNORED_PLAYERS: &[&str] = &[
     "KDE Connect", "kdeconnect", "Chromecast", "chromecast",
@@ -62,10 +62,10 @@ pub async fn spawn_media_monitor_dbus(
                 
                 let mut mgr = manager.lock().await;
                 if any_playing && !media_playing {
-                    mgr.pause(false).await;
+                    incr_active_inhibitor(&mut mgr).await;
                     media_playing = true;
                 } else if !any_playing && media_playing {
-                    mgr.resume(false).await;
+                    decr_active_inhibitor(&mut mgr).await;
                     media_playing = false;
                 }
             }

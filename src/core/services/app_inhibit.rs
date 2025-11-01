@@ -5,6 +5,7 @@ use serde_json::Value;
 use procfs::process::all_processes;
 
 use crate::config::model::StasisConfig;
+use crate::core::manager::helpers::{decr_active_inhibitor, incr_active_inhibitor};
 use crate::log::log_message;
 use crate::core::manager::Manager;
 
@@ -13,7 +14,6 @@ pub struct AppInhibitor {
     cfg: Arc<StasisConfig>,
     active_apps: HashSet<String>,
     desktop: String,
-    #[allow(dead_code)]
     manager: Arc<Mutex<Manager>>,
 }
 
@@ -178,35 +178,44 @@ impl AppInhibitor {
 
 pub async fn spawn_app_inhibit_task(
     manager: Arc<Mutex<Manager>>,
-    cfg: Arc<StasisConfig>
+    cfg: Arc<StasisConfig>,
 ) -> Arc<Mutex<AppInhibitor>> {
     let inhibitor = Arc::new(Mutex::new(AppInhibitor::new(cfg.clone(), Arc::clone(&manager))));
- 
 
     // If no inhibit apps are configured, sleep forever
     if cfg.inhibit_apps.is_empty() {
         log_message("No inhibit_apps configured, sleeping app inhibitor.");
         tokio::spawn(async move {
-            futures::future::pending::<()>().await; // sleep indefinitely
+            futures::future::pending::<()>().await;
         });
         return inhibitor;
     }
 
     let inhibitor_clone = Arc::clone(&inhibitor);
-    tokio::spawn(async move {
-        loop {
-            {
-                let mut guard = inhibitor_clone.lock().await;
-                let was_running = !guard.active_apps.is_empty();
-                let any_running = guard.is_any_app_running().await;
 
+    tokio::spawn(async move {
+        let mut inhibitor_active = false; // track previous inhibitor state locally
+
+        loop {
+            let running = {
+                let mut guard = inhibitor_clone.lock().await;
+                guard.is_any_app_running().await
+            };
+
+            if running && !inhibitor_active {
+                // App started inhibiting
+                let guard = inhibitor_clone.lock().await;
                 let mut mgr = guard.manager.lock().await;
-                if any_running && !was_running {
-                    mgr.pause(false).await;
-                } else if !any_running && was_running {
-                    mgr.resume(false).await;
-                }
+                incr_active_inhibitor(&mut mgr).await;
+                inhibitor_active = true;
+            } else if !running && inhibitor_active {
+                // All apps stopped inhibiting
+                let guard = inhibitor_clone.lock().await;
+                let mut mgr = guard.manager.lock().await;
+                decr_active_inhibitor(&mut mgr).await;
+                inhibitor_active = false;
             }
+
             tokio::time::sleep(std::time::Duration::from_secs(4)).await;
         }
     });
