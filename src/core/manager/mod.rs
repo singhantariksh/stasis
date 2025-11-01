@@ -82,6 +82,7 @@ impl Manager {
         self.state.last_activity_display = now;
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.state.debounce = Some(now + debounce);
+        self.state.last_activity = now + debounce;
 
         // Clear only actions that are before or equal to the current stage
         for actions in [&mut self.state.default_actions, &mut self.state.ac_actions, &mut self.state.battery_actions] {
@@ -175,10 +176,9 @@ impl Manager {
         
         let now = Instant::now();
         if let Some(until) = self.state.debounce {
-            if now < until {
+            if now <= until {
                 return;
             } else {
-                self.state.last_activity = now;
                 self.state.debounce = None;
             }
         }
@@ -278,18 +278,37 @@ impl Manager {
             return None;
         }
 
+        // Determine actions based on current block
+        let actions = match self.state.current_block.as_deref() {
+            Some("ac") => &self.state.ac_actions,
+            Some("battery") => &self.state.battery_actions,
+            _ => &self.state.default_actions,
+        };
+
+        if actions.is_empty() {
+            return None;
+        }
+
         let mut min_time: Option<Instant> = None;
 
-        for actions in [&self.state.default_actions, &self.state.ac_actions, &self.state.battery_actions] {
-            for action in actions.iter() {
-                let last = action.last_triggered.unwrap_or(self.state.last_activity);
-                let next_time = last + Duration::from_secs(action.timeout as u64);
-                
-                min_time = Some(match min_time {
-                    None => next_time,
-                    Some(current_min) => current_min.min(next_time),
-                });
+        for action in actions.iter() {
+            // Skip lock if already locked
+            if matches!(action.kind, IdleAction::LockScreen) && self.state.lock_state.is_locked {
+                continue;
             }
+
+            let last = action.last_triggered.unwrap_or(self.state.last_activity);
+            let mut next_time = last + Duration::from_secs(action.timeout as u64);
+
+            // Respect debounce
+            if let Some(debounce_end) = self.state.debounce {
+                next_time = next_time.max(debounce_end);
+            }
+
+            min_time = Some(match min_time {
+                None => next_time,
+                Some(current_min) => current_min.min(next_time),
+            });
         }
 
         min_time

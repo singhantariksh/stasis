@@ -103,6 +103,7 @@ impl ManagerState {
 
         let now = Instant::now();
         let debounce = Some(now + Duration::from_secs(cfg.debounce_seconds as u64));
+        let debounce_duration = Duration::from_secs(cfg.debounce_seconds as u64);
 
         let instant_actions: Vec<_> = default_actions
             .iter()
@@ -127,7 +128,7 @@ impl ManagerState {
             default_actions,
             instant_actions,
             instants_triggered: false,
-            last_activity: now,
+            last_activity: now + debounce_duration,
             last_activity_display: now,
             lock_state: LockState::from_config(&cfg),
             manually_paused: false,

@@ -49,141 +49,141 @@ async fn main() -> Result<()> {
     }
 
     // --- Handle subcommands via socket ---
-if let Some(cmd) = &args.command {
-    match cmd {
-        Command::Info { json } => {
-            match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
-                Ok(Ok(mut stream)) => {
-                    let msg = if *json { "info --json" } else { "info" };
-                    let _ = stream.write_all(msg.as_bytes()).await;
+    if let Some(cmd) = &args.command {
+        match cmd {
+            Command::Info { json } => {
+                match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
+                    Ok(Ok(mut stream)) => {
+                        let msg = if *json { "info --json" } else { "info" };
+                        let _ = stream.write_all(msg.as_bytes()).await;
 
-                    let mut response = Vec::new();
-                    match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
-                        Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
-                        Ok(Err(e)) => {
-                            if *json {
-                                println!(r#"{{"text":"", "alt": "not_running", "tooltip":"Read error"}}"#);
-                            } else {
-                                eprintln!("Failed to read response: {}", e);
+                        let mut response = Vec::new();
+                        match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
+                            Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
+                            Ok(Err(e)) => {
+                                if *json {
+                                    println!(r#"{{"text":"", "alt": "not_running", "tooltip":"Read error"}}"#);
+                                } else {
+                                    eprintln!("Failed to read response: {}", e);
+                                }
                             }
-                        }
-                        Err(_) => {
-                            if *json {
-                                println!(r#"{{"text":"", "alt": "not_running", "tooltip":"Connection timeout"}}"#);
-                            } else {
-                                eprintln!("Timeout reading from Stasis");
+                            Err(_) => {
+                                if *json {
+                                    println!(r#"{{"text":"", "alt": "not_running", "tooltip":"Connection timeout"}}"#);
+                                } else {
+                                    eprintln!("Timeout reading from Stasis");
+                                }
                             }
                         }
                     }
+                    Ok(Err(_)) | Err(_) => {
+                        if *json {
+                            println!(r#"{{"text":"", "alt": "not_running", "tooltip":"No running Stasis instance found"}}"#);
+                        } else {
+                            eprintln!("No running Stasis instance found");
+                            std::process::exit(1);
+                        }
+                    }
                 }
-                Ok(Err(_)) | Err(_) => {
-                    if *json {
-                        println!(r#"{{"text":"", "alt": "not_running", "tooltip":"No running Stasis instance found"}}"#);
-                    } else {
+            }
+            
+            Command::Trigger { step } => {
+                match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
+                    Ok(Ok(mut stream)) => {
+                        let msg = format!("trigger {}", step);
+                        let _ = stream.write_all(msg.as_bytes()).await;
+
+                        let mut response = Vec::new();
+                        match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
+                            Ok(Ok(_)) => {
+                                let response_text = String::from_utf8_lossy(&response);
+                                if response_text.starts_with("ERROR:") {
+                                    eprintln!("{}", response_text.trim_start_matches("ERROR:").trim());
+                                    std::process::exit(1);
+                                } else if !response_text.is_empty() {
+                                    println!("{}", response_text);
+                                } else {
+                                    println!("Action '{}' triggered", step);
+                                }
+                            }
+                            Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
+                            Err(_) => eprintln!("Timeout reading response"),
+                        }
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        eprintln!("No running Stasis instance found");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            
+            Command::ListActions => {
+                match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
+                    Ok(Ok(mut stream)) => {
+                        let _ = stream.write_all(b"list_actions").await;
+
+                        let mut response = Vec::new();
+                        match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
+                            Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
+                            Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
+                            Err(_) => eprintln!("Timeout reading response"),
+                        }
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        eprintln!("No running Stasis instance found");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            
+            _ => {
+                let msg = match cmd {
+                    Command::Reload => "reload",
+                    Command::Pause => "pause",
+                    Command::Resume => "resume",
+                    Command::ToggleInhibit => "toggle_inhibit",
+                    Command::Stop => "stop",
+                    _ => unreachable!(),
+                };
+
+                match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
+                    Ok(Ok(mut stream)) => {
+                        let _ = stream.write_all(msg.as_bytes()).await;
+
+                        if msg == "toggle_inhibit" {
+                            let mut response = Vec::new();
+                            match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
+                                Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
+                                Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
+                                Err(_) => eprintln!("Timeout reading toggle response"),
+                            }
+                        } else {
+                            // For other commands, try to read with timeout but don't fail if no response
+                            let mut response = Vec::new();
+                            let _ = timeout(Duration::from_millis(500), stream.read_to_end(&mut response)).await;
+                            
+                            let success_msg = match cmd {
+                                Command::Reload => "Configuration reloaded successfully",
+                                Command::Pause => "Idle timers paused",
+                                Command::Resume => "Idle timers resumed",
+                                Command::Stop => "Stasis daemon stopped",
+                                _ => "",
+                            };
+                            if !success_msg.is_empty() {
+                                println!("{}", success_msg);
+                            }
+                        }
+                    }
+                    Ok(Err(_)) | Err(_) => {
                         eprintln!("No running Stasis instance found");
                         std::process::exit(1);
                     }
                 }
             }
         }
-        
-        Command::Trigger { step } => {
-            match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
-                Ok(Ok(mut stream)) => {
-                    let msg = format!("trigger {}", step);
-                    let _ = stream.write_all(msg.as_bytes()).await;
 
-                    let mut response = Vec::new();
-                    match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
-                        Ok(Ok(_)) => {
-                            let response_text = String::from_utf8_lossy(&response);
-                            if response_text.starts_with("ERROR:") {
-                                eprintln!("{}", response_text.trim_start_matches("ERROR:").trim());
-                                std::process::exit(1);
-                            } else if !response_text.is_empty() {
-                                println!("{}", response_text);
-                            } else {
-                                println!("Action '{}' triggered", step);
-                            }
-                        }
-                        Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
-                        Err(_) => eprintln!("Timeout reading response"),
-                    }
-                }
-                Ok(Err(_)) | Err(_) => {
-                    eprintln!("No running Stasis instance found");
-                    std::process::exit(1);
-                }
-            }
-        }
-        
-        Command::ListActions => {
-            match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
-                Ok(Ok(mut stream)) => {
-                    let _ = stream.write_all(b"list_actions").await;
-
-                    let mut response = Vec::new();
-                    match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
-                        Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
-                        Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
-                        Err(_) => eprintln!("Timeout reading response"),
-                    }
-                }
-                Ok(Err(_)) | Err(_) => {
-                    eprintln!("No running Stasis instance found");
-                    std::process::exit(1);
-                }
-            }
-        }
-        
-        _ => {
-            let msg = match cmd {
-                Command::Reload => "reload",
-                Command::Pause => "pause",
-                Command::Resume => "resume",
-                Command::ToggleInhibit => "toggle_inhibit",
-                Command::Stop => "stop",
-                _ => unreachable!(),
-            };
-
-            match timeout(Duration::from_secs(3), UnixStream::connect(SOCKET_PATH)).await {
-                Ok(Ok(mut stream)) => {
-                    let _ = stream.write_all(msg.as_bytes()).await;
-
-                    if msg == "toggle_inhibit" {
-                        let mut response = Vec::new();
-                        match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
-                            Ok(Ok(_)) => println!("{}", String::from_utf8_lossy(&response)),
-                            Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
-                            Err(_) => eprintln!("Timeout reading toggle response"),
-                        }
-                    } else {
-                        // For other commands, try to read with timeout but don't fail if no response
-                        let mut response = Vec::new();
-                        let _ = timeout(Duration::from_millis(500), stream.read_to_end(&mut response)).await;
-                        
-                        let success_msg = match cmd {
-                            Command::Reload => "Configuration reloaded successfully",
-                            Command::Pause => "Idle timers paused",
-                            Command::Resume => "Idle timers resumed",
-                            Command::Stop => "Stasis daemon stopped",
-                            _ => "",
-                        };
-                        if !success_msg.is_empty() {
-                            println!("{}", success_msg);
-                        }
-                    }
-                }
-                Ok(Err(_)) | Err(_) => {
-                    eprintln!("No running Stasis instance found");
-                    std::process::exit(1);
-                }
-            }
-        }
+        return Ok(());
     }
-
-    return Ok(());
-}
     
     // --- Single Instance enforcement ---
     let just_help_or_version = std::env::args().any(|a| matches!(a.as_str(), "-V" | "--version" | "-h" | "--help" | "help"));
