@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{config::model::{IdleAction, LidCloseAction, LidOpenAction}, core::manager::{helpers::{run_action, wake_idle_tasks}, Manager}};
@@ -29,25 +29,19 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
         
         Event::ACConnected => {
             let mut mgr = manager.lock().await;
-            if mgr.state.is_laptop() {
-                mgr.state.set_on_battery(false);
-                wake_idle_tasks(&mgr.state);
-            }
+            mgr.state.set_on_battery(false);
+            wake_idle_tasks(&mgr.state);
         }
 
         Event::ACDisconnected => {
             let mut mgr = manager.lock().await;
-            if mgr.state.is_laptop() {
-                mgr.state.set_on_battery(true);
-                wake_idle_tasks(&mgr.state);
-            }
+            mgr.state.set_on_battery(true);
+            wake_idle_tasks(&mgr.state);
         }
          
         Event::Suspend => {
             let mut mgr = manager.lock().await;
             mgr.pause(false).await;
-            mgr.trigger_pre_suspend(false).await;
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         
         Event::Resume => {
@@ -90,12 +84,16 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
             // clone the lid_close_action and lock_action before mutably borrowing
             if let Some(cfg) = &mgr.state.cfg {
                 let lid_close = cfg.lid_close_action.clone();
+                let suspend_action_opt = cfg.actions.iter().find(|a| a.kind == IdleAction::Suspend).cloned();
                 let lock_action_opt = cfg.actions.iter().find(|a| a.kind == IdleAction::LockScreen).cloned();
+                let custom_action_opt = cfg.actions.iter().find(|a| a.kind == IdleAction::Custom).cloned();
                 let _ = cfg; // release immutable borrow
 
                 match lid_close {
                     LidCloseAction::Suspend => {
-                        mgr.trigger_pre_suspend(true).await;
+                        if let Some(suspend_action) = suspend_action_opt {
+                            run_action(&mut mgr, &suspend_action).await;
+                        }
                     }
                     LidCloseAction::LockScreen => {
                         if let Some(lock_action) = lock_action_opt {
@@ -104,7 +102,9 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
                     }
                     LidCloseAction::Custom(cmd) => {
                         log_message(&format!("Running custom lid-close command: {}", cmd));
-                        // spawn command here if needed
+                        if let Some(custom_action) = custom_action_opt {
+                            run_action(&mut mgr, &custom_action).await;
+                        }
                     }
                     LidCloseAction::Ignore => {
                         log_message("Lid close ignored by config");

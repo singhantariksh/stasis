@@ -31,10 +31,8 @@ pub async fn listen_for_suspend_events(idle_manager: Arc<Mutex<Manager>>) -> Zbu
         
         let manager_arc = Arc::clone(&idle_manager);
         if going_to_sleep {
-            log_message("System is preparing to suspend...");
             handle_event(&manager_arc, Event::Suspend).await; 
         } else {
-            log_message("System resumed from sleep");
             handle_event(&manager_arc, Event::Wake).await;
         }
     }

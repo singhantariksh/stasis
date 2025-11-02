@@ -179,13 +179,32 @@ pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
         log_message("Lock screen action triggered, notifying lock watcher");
     }
 
+    // Handle pre-suspend for Suspend actions
+    if matches!(action.kind, crate::config::model::IdleAction::Suspend) {
+        if let Some(cfg) = &mgr.state.cfg {
+            if let Some(ref cmd) = cfg.pre_suspend_command {
+                log_message(&format!("Running pre-suspend command: {}", cmd));
+                let should_wait = match run_command_detached(cmd).await {
+                    Ok(pid) => {
+                        log_message(&format!("Pre-suspend command started with PID {}", pid));
+                        true
+                    }
+                    Err(e) => {
+                        log_error_message(&format!("Pre-suspend command failed: {}", e));
+                        true
+                    }
+                };
+                // Wait 500ms before proceeding to suspend
+                if should_wait {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+    }
+
     let requests = prepare_action(action).await;
     for req in requests {
         match req {
-            ActionRequest::PreSuspend => {
-                let cmd = action.command.clone();
-                run_command_for_action(mgr, action, cmd).await;
-            }
             ActionRequest::RunCommand(cmd) => {
                 run_command_for_action(mgr, action, cmd).await;
             }
@@ -345,4 +364,3 @@ pub async fn decr_active_inhibitor(mgr: &mut Manager) {
         ));
     }
 }
-

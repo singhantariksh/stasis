@@ -2,35 +2,28 @@ use std::time::Duration;
 use eyre::Result;
 use tokio::process::Command;
 use std::process::Stdio;
-
 use crate::config::model::{IdleActionBlock, IdleAction};
 use crate::log::log_message;
 
 #[derive(Debug, Clone)]
 pub enum ActionRequest {
     RunCommand(String),
-    PreSuspend,
-    #[allow(dead_code)]
     Skip(String),
 }
 
-/// Prepare action for execution, similar to old logic
+/// Prepare action for execution
 pub async fn prepare_action(action: &IdleActionBlock) -> Vec<ActionRequest> {
     let cmd = action.command.clone();
-
     match action.kind {
         IdleAction::Suspend => {
-            let mut reqs = Vec::new();
-            reqs.push(ActionRequest::PreSuspend);
             if !cmd.trim().is_empty() {
-                reqs.push(ActionRequest::RunCommand(cmd));
+                vec![ActionRequest::RunCommand(cmd)]
+            } else {
+                vec![]
             }
-            reqs
         }
-
         IdleAction::LockScreen => {
             let probe_cmd = &action.command;
-
             if is_process_running(probe_cmd).await {
                 log_message("Lockscreen already running, skipping action.");
                 vec![ActionRequest::Skip(probe_cmd.to_string())]
@@ -38,7 +31,6 @@ pub async fn prepare_action(action: &IdleActionBlock) -> Vec<ActionRequest> {
                 vec![ActionRequest::RunCommand(action.command.clone())]
             }
         }
-
         _ => {
             if cmd.trim().is_empty() {
                 vec![]
@@ -61,14 +53,12 @@ pub async fn run_command_silent(cmd: &str) -> Result<()> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-
         let status = child.wait().await?;
         if !status.success() {
             eyre::bail!("Command '{}' exited with status {:?}", cmd, status.code());
         }
         Ok::<(), eyre::Report>(())
     };
-
     tokio::time::timeout(Duration::from_secs(30), fut).await??;
     Ok(())
 }
@@ -79,7 +69,6 @@ pub async fn run_command_detached(command: &str) -> Result<u32, Box<dyn std::err
     if parts.is_empty() {
         return Err("Empty command".into());
     }
-
     let child = Command::new("sh")
         .arg("-c")
         .arg(command)
@@ -88,7 +77,6 @@ pub async fn run_command_detached(command: &str) -> Result<u32, Box<dyn std::err
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-
     let pid = child.id().ok_or("Failed to get child PID")?;
     Ok(pid)
 }
@@ -102,7 +90,6 @@ pub async fn is_process_running(cmd: &str) -> bool {
     if first_word.is_empty() {
         return false;
     }
-
     match Command::new("pgrep").arg(first_word).output().await {
         Ok(output) => !output.stdout.is_empty(),
         Err(_) => false,
