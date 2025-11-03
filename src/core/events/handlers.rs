@@ -28,8 +28,6 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
             mgr.reset_instant_actions();
             mgr.trigger_instant_actions().await;
             wake_idle_tasks(&mgr.state);
-
-            log_message("Switched to AC")
         }
 
         Event::ACDisconnected => {
@@ -40,8 +38,6 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
             mgr.reset_instant_actions();
             mgr.trigger_instant_actions().await;
             wake_idle_tasks(&mgr.state);
-
-            log_message("Switched to Battery");
         }
         Event::InputActivity => {
             let mut mgr = manager.lock().await;
