@@ -229,16 +229,26 @@ pub fn load_config() -> Result<StasisConfig> {
     let actions = match chassis {
         ChassisKind::Laptop => {
             let mut all = Vec::new();
-            all.extend(
-                collect_actions(&config, "stasis.on_ac")
-                    .or_else(|_| collect_actions(&config, "stasis.on-ac"))?
-            );
-            all.extend(
-                collect_actions(&config, "stasis.on_battery")
-                    .or_else(|_| collect_actions(&config, "stasis.on-battery"))?
-            );
+            // Collect with "ac." prefix
+            let ac_actions = collect_actions(&config, "stasis.on_ac")?
+                .into_iter()
+                .map(|mut a| {
+                    a.name = format!("ac.{}", a.name);
+                    a
+                });
+            all.extend(ac_actions);
+            
+            // Collect with "battery." prefix
+            let battery_actions = collect_actions(&config, "stasis.on_battery")?
+                .into_iter()
+                .map(|mut a| {
+                    a.name = format!("battery.{}", a.name);
+                    a
+                });
+            all.extend(battery_actions);
+            
             all
-        }
+        }   
         ChassisKind::Desktop => collect_actions(&config, "stasis")?,
     };
 

@@ -207,12 +207,6 @@ async fn main() -> Result<()> {
     let manager = Manager::new(Arc::clone(&cfg));
     let manager = Arc::new(Mutex::new(manager));
 
-    // Immediately trigger instants at startup
-    {
-        let mut mgr = manager.lock().await;
-        mgr.trigger_instant_actions().await;
-    }
-    
     // --- Spawn background tasks ---
     let idle_handle = spawn_idle_task(Arc::clone(&manager));
     let lock_handle = spawn_lock_watcher(Arc::clone(&manager)).await;
@@ -233,12 +227,24 @@ async fn main() -> Result<()> {
             log_error_message(&format!("D-Bus suspend event listener failed: {}", e));
         }
     });
+
+    // --- AC/Battery Detection (DETECT FIRST, synchronously) ---
+    {
+        use crate::core::services::power_detection::detect_initial_power_state;
+        detect_initial_power_state(&manager).await;
+    }
     
     // --- AC/Battery Detection ---
     let laptop_manager = Arc::clone(&manager);
     tokio::spawn(spawn_power_source_monitor(laptop_manager));
 
-   // --- Spawn app inhibit task ---
+    // Immediately trigger instants at startup
+    {
+        let mut mgr = manager.lock().await;
+        mgr.trigger_instant_actions().await;
+    }
+    
+    // --- Spawn app inhibit task ---
     let app_inhibitor = spawn_app_inhibit_task(
         Arc::clone(&manager),
         Arc::clone(&cfg)

@@ -19,10 +19,9 @@ pub struct ManagerState {
     pub cfg: Option<Arc<StasisConfig>>,
     pub chassis: ChassisType, 
     pub compositor_managed: bool,
-    pub current_block: Option<String>,
+    pub current_block: String,
     pub debounce: Option<Instant>,
     pub default_actions: Vec<IdleActionBlock>,
-    pub instant_actions: Vec<IdleActionBlock>,
     pub instants_triggered: bool,
     pub last_activity: Instant,
     pub lock_state: LockState,
@@ -55,10 +54,9 @@ impl Default for ManagerState {
             cfg: None,
             chassis: ChassisType::Desktop(DesktopState),
             compositor_managed: false,
-            current_block: None,
+            current_block: "default".to_string(),
             debounce: None,
             default_actions: Vec::new(),
-            instant_actions: Vec::new(),
             instants_triggered: false,
             last_activity: now, 
             lock_state: LockState::default(),
@@ -104,17 +102,15 @@ impl ManagerState {
         let now = Instant::now();
         let debounce = Some(now + Duration::from_secs(cfg.debounce_seconds as u64));
 
-        let instant_actions: Vec<_> = default_actions
-            .iter()
-            .chain(&ac_actions)
-            .chain(&battery_actions)
-            .filter(|a| a.is_instant())
-            .cloned()
-            .collect();
-
         let chassis = match detect_chassis() {
             ChassisKind::Laptop => ChassisType::Laptop(LaptopState { on_battery: false }),
             ChassisKind::Desktop => ChassisType::Desktop(DesktopState),
+        };
+
+        // Initial block - will be updated by power detection
+        let current_block = match &chassis {
+            ChassisType::Desktop(_) => "default".to_string(),
+            ChassisType::Laptop(_) => "ac".to_string(), // Default to AC, will be corrected by power detection
         };
 
         let state = Self {
@@ -128,10 +124,9 @@ impl ManagerState {
             cfg: Some(cfg.clone()),
             chassis,
             compositor_managed: false,
-            current_block: None,
+            current_block,
             debounce,
             default_actions,
-            instant_actions,
             instants_triggered: false,
             last_activity: now,
             lock_state: LockState::from_config(&cfg),
@@ -166,7 +161,74 @@ impl ManagerState {
     pub fn set_on_battery(&mut self, value: bool) {
         if let ChassisType::Laptop(l) = &mut self.chassis {
             l.on_battery = value;
+            // Update current_block when power state changes
+            self.update_current_block();
         }
+    }
+
+    /// Update current_block based on chassis type and power state
+    pub fn update_current_block(&mut self) {
+        let new_block = match &self.chassis {
+            ChassisType::Desktop(_) => "default".to_string(),
+            ChassisType::Laptop(state) => {
+                if state.on_battery {
+                    if !self.battery_actions.is_empty() {
+                        "battery".to_string()
+                    } else {
+                        "default".to_string()
+                    }
+                } else {
+                    if !self.ac_actions.is_empty() {
+                        "ac".to_string()
+                    } else {
+                        "default".to_string()
+                    }
+                }
+            }
+        };
+
+        if new_block != self.current_block {
+            let old_block = self.current_block.clone();
+            self.current_block = new_block;
+            log_message(&format!(
+                "Switched active block: {} -> {}",
+                old_block, self.current_block
+            ));
+            
+            // Reset state when switching blocks
+            self.action_index = 0;
+            self.instants_triggered = false;
+            self.notify.notify_one();
+        }
+    }
+
+    /// Get the currently active action list based on current_block
+    pub fn get_active_actions(&self) -> &[IdleActionBlock] {
+        match self.current_block.as_str() {
+            "ac" => &self.ac_actions,
+            "battery" => &self.battery_actions,
+            "default" => &self.default_actions,
+            _ => &self.default_actions,
+        }
+    }
+
+    /// Get mutable reference to the currently active action list
+    pub fn get_active_actions_mut(&mut self) -> &mut Vec<IdleActionBlock> {
+        match self.current_block.as_str() {
+            "ac" => &mut self.ac_actions,
+            "battery" => &mut self.battery_actions,
+            "default" => &mut self.default_actions,
+            _ => &mut self.default_actions,
+        }
+    }
+
+    /// Get all instant actions from the currently active action list
+    pub fn get_active_instant_actions(&self) -> Vec<IdleActionBlock> {
+        self.get_active_actions()
+            .iter()
+            .filter(|a| a.is_instant())
+            .cloned()
+            .collect()
     }
 
     pub async fn update_from_config(&mut self, cfg: &StasisConfig) {
@@ -208,18 +270,12 @@ impl ManagerState {
             }
         }
 
-        // Recompute instant_actions for new config
-        self.instant_actions = self
-            .default_actions
-            .iter()
-            .chain(&self.ac_actions)
-            .chain(&self.battery_actions)
-            .filter(|a| a.is_instant())
-            .cloned()
-            .collect();
+        // Update current_block based on new config
+        self.update_current_block();
 
         // Reset instant trigger flag
         self.instants_triggered = false;
+        
         // Reset debounce according to new cfg
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.debounce = Some(Instant::now() + debounce);
@@ -234,7 +290,10 @@ impl ManagerState {
         // Wake idle task to recalc immediately
         self.notify.notify_one();
 
-        log_message("Idle timers reloaded from config");
+        log_message(&format!(
+            "Idle timers reloaded from config (active block: {})",
+            self.current_block
+        ));
     }
 }
 
@@ -310,4 +369,3 @@ impl Default for ActiveFlags {
         }
     }
 }
-

@@ -20,22 +20,33 @@ pub enum Event {
 
 pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
     match event {
-        Event::InputActivity => {
-            let mut mgr = manager.lock().await;
-            mgr.reset().await;
-            mgr.state.lock_notify.notify_waiters();
-            wake_idle_tasks(&mgr.state);
-        }
-        
         Event::ACConnected => {
             let mut mgr = manager.lock().await;
             mgr.state.set_on_battery(false);
+            mgr.state.action_index = 0;
+            
+            mgr.reset_instant_actions();
+            mgr.trigger_instant_actions().await;
             wake_idle_tasks(&mgr.state);
+
+            log_message("Switched to AC")
         }
 
         Event::ACDisconnected => {
             let mut mgr = manager.lock().await;
             mgr.state.set_on_battery(true);
+            mgr.state.action_index = 0;
+
+            mgr.reset_instant_actions();
+            mgr.trigger_instant_actions().await;
+            wake_idle_tasks(&mgr.state);
+
+            log_message("Switched to Battery");
+        }
+        Event::InputActivity => {
+            let mut mgr = manager.lock().await;
+            mgr.reset().await;
+            mgr.state.lock_notify.notify_waiters();
             wake_idle_tasks(&mgr.state);
         }
          

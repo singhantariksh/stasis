@@ -46,7 +46,7 @@ impl Manager {
             return;
         }
 
-        let instant_actions = self.state.instant_actions.clone();
+        let instant_actions = self.state.get_active_instant_actions();
 
         log_message("Triggering instant actions at startup...");
         for action in instant_actions {
@@ -83,6 +83,10 @@ impl Manager {
         self.state.debounce = Some(now + debounce);
         self.state.last_activity = now;
 
+        // Store values we need before borrowing
+        let is_locked = self.state.lock_state.is_locked;
+        let cmd_to_check = self.state.lock_state.command.clone();
+
         // Clear only actions that are before or equal to the current stage
         for actions in [&mut self.state.default_actions, &mut self.state.ac_actions, &mut self.state.battery_actions] {
             let mut past_lock = false;
@@ -91,66 +95,61 @@ impl Manager {
                     past_lock = true;
                 }
                 // if locked, preserve stages past lock (so dpms/suspend remain offset correctly)
-                if self.state.lock_state.is_locked && past_lock {
+                if is_locked && past_lock {
                     continue;
                 }
                 a.last_triggered = None;
             }
-        }        
-        let block_name = if !self.state.ac_actions.is_empty() || !self.state.battery_actions.is_empty() {
-            match self.state.on_battery() {
-                Some(true) => "battery",
-                Some(false) => "ac",
-                None => "default",
-            }
-        } else {
-            "default"
-        };
-
-        // Only update current_block if it changed
-        if self.state.current_block.as_deref() != Some(block_name) {
-            self.state.current_block = Some(block_name.to_string());
         }
 
-        // Recompute action_index for the current block
-        let actions = match block_name {
-            "ac" => &mut self.state.ac_actions,
-            "battery" => &mut self.state.battery_actions,
-            "default" => &mut self.state.default_actions,
-            _ => unreachable!(),
-        };
+        // Use the helper method to get active actions
+        let (is_instant, lock_index) = {
+            let actions = self.state.get_active_actions_mut();
 
-        // Skip instant actions here. handled elsewhere
-        let index = actions.iter()
-            .position(|a| a.last_triggered.is_none())
-            .unwrap_or(actions.len().saturating_sub(1));
+            // Skip instant actions here. handled elsewhere
+            let index = actions.iter()
+                .position(|a| a.last_triggered.is_none())
+                .unwrap_or(actions.len().saturating_sub(1));
+
+            let is_instant = !actions.is_empty() && actions[index].is_instant();
+
+            // Find lock index if needed
+            let lock_index = if is_locked {
+                actions.iter().position(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen))
+            } else {
+                None
+            };
+
+            (is_instant, lock_index)
+        }; // Borrow ends here
 
         // Reset action_index
-        if !self.state.lock_state.is_locked {
+        if !is_locked {
             self.state.action_index = 0;
         }
 
-        if !actions.is_empty() && actions[index].is_instant() {
+        if is_instant {
             return;
         }
 
-        if self.state.lock_state.is_locked {
-            if let Some(lock_index) = actions.iter().position(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen)) {
+        if is_locked {
+            if let Some(lock_index) = lock_index {
                 // Check if lock process is still running
-                let cmd_to_check = self.state.lock_state.command.clone();
                 let still_active = if let Some(cmd) = cmd_to_check {
                     is_process_running(&cmd).await
                 } else {
                     true // Assume lock is active if no command is specified
                 };
 
-                if still_active && self.state.lock_state.is_locked {
+                if still_active {
                     // Always advance to one past lock when locked
                     self.state.action_index = lock_index.saturating_add(1);
                     
                     let debounce_end = now + debounce;
-                    if self.state.action_index < actions.len() {
-                        actions[self.state.action_index].last_triggered = Some(debounce_end); 
+                    let new_action_index = self.state.action_index;
+                    let actions = self.state.get_active_actions_mut();
+                    if new_action_index < actions.len() {
+                        actions[new_action_index].last_triggered = Some(debounce_end); 
                     } else {
                         // If at the end, reset last_triggered for the last action
                         if lock_index < actions.len() {
@@ -175,38 +174,23 @@ impl Manager {
 
         let now = Instant::now();
 
-        // Determine which block to use
-        let block_name = if !self.state.ac_actions.is_empty() || !self.state.battery_actions.is_empty() {
-            match self.state.on_battery() {
-                Some(true) => "battery",
-                Some(false) => "ac",
-                None => "default",
-            }
-        } else {
-            "default"
-        };
+        // Store values we need before borrowing actions
+        let action_index = self.state.action_index;
+        let is_locked = self.state.lock_state.is_locked;
+        let last_activity = self.state.last_activity;
+        let debounce = self.state.debounce;
 
-        // Only update if changed
-        if self.state.current_block.as_deref() != Some(block_name) {
-            self.state.current_block = Some(block_name.to_string());
-        }
-
-        // Get reference to the right actions Vec
-        let actions = match block_name {
-            "ac" => &mut self.state.ac_actions,
-            "battery" => &mut self.state.battery_actions,
-            "default" => &mut self.state.default_actions,
-            _ => unreachable!(),
-        };
+        // Get reference to the right actions Vec using helper method
+        let actions = self.state.get_active_actions_mut();
 
         if actions.is_empty() {
             return;
         }
 
-        let index = self.state.action_index.min(actions.len() - 1);
+        let index = action_index.min(actions.len() - 1);
 
         // Skip lock if already locked
-        if matches!(actions[index].kind, IdleAction::LockScreen) && self.state.lock_state.is_locked {
+        if matches!(actions[index].kind, IdleAction::LockScreen) && is_locked {
             return;
         }
 
@@ -221,11 +205,11 @@ impl Manager {
                 prev_trig + timeout
             } else {
                 // Previous hasn't fired yet, shouldn't happen but fallback
-                self.state.last_activity + timeout
+                last_activity + timeout
             }
         } else {
             // First action: apply debounce + timeout from last_activity
-            let base = self.state.debounce.unwrap_or(self.state.last_activity);
+            let base = debounce.unwrap_or(last_activity);
             base + timeout
         };
 
@@ -235,16 +219,20 @@ impl Manager {
         }
 
         // Action is ready: clone and mark triggered
-        let action_clone = actions[index].clone();
-        actions[index].last_triggered = Some(now);
+        let (action_clone, actions_len) = {
+            let actions = self.state.get_active_actions_mut();
+            let action_clone = actions[index].clone();
+            actions[index].last_triggered = Some(now);
+            (action_clone, actions.len())
+        }; // Borrow ends here
 
         // Advance index
         self.state.action_index += 1;
-        if self.state.action_index < actions.len() {
+        if self.state.action_index < actions_len {
             // Only mark next action triggered after it actually fires
             self.state.resume_commands_fired = false;
         } else {
-            self.state.action_index = actions.len() - 1;
+            self.state.action_index = actions_len - 1;
         }
 
         // Add to resume queue if needed
@@ -281,12 +269,8 @@ impl Manager {
             return None;
         }
 
-        // Determine actions based on current block
-        let actions = match self.state.current_block.as_deref() {
-            Some("ac") => &self.state.ac_actions,
-            Some("battery") => &self.state.battery_actions,
-            _ => &self.state.default_actions,
-        };
+        // Use helper method to get active actions
+        let actions = self.state.get_active_actions();
 
         if actions.is_empty() {
             return None;
@@ -330,17 +314,6 @@ impl Manager {
 
 
 
-    pub async fn update_power_source(&mut self) {
-        match self.state.on_battery() {
-            Some(true) => {
-                // on battery, proceed
-            }
-            Some(false) | None => {
-                return;
-            }
-        }
-    }
-  
     pub async fn advance_past_lock(&mut self) {
         log_message("Advancing state past lock stage...");
         self.state.lock_state.post_advanced = true;
@@ -409,4 +382,3 @@ impl Manager {
         }
     }
 }
-
