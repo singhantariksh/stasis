@@ -122,7 +122,7 @@ pub async fn spawn_ipc_socket_with_listener(
 
                                             let response = if currently_inhibited {
                                                 serde_json::json!({
-                                                    "text": "Idle Active",
+                                                    "text": "Active",
                                                     "alt": "idle_active",
                                                     "tooltip": "Idle inhibition cleared"
                                                 })
@@ -171,16 +171,16 @@ pub async fn spawn_ipc_socket_with_listener(
                                                         let idle_inhibited = paused || app_blocking || manually_inhibited;
 
                                                         break if as_json {
-                                                            let icon = if manually_inhibited {
-                                                                "manually_inhibited"
+                                                            let (text, icon) = if manually_inhibited {
+                                                                ("Inhibited", "manually_inhibited")
                                                             } else if idle_inhibited {
-                                                                "idle_inhibited"
+                                                                ("Blocked", "idle_inhibited")
                                                             } else {
-                                                                "idle_active"
+                                                                ("Active", "idle_active")
                                                             };
 
                                                             serde_json::json!({
-                                                                "text": "",
+                                                                "text": text,
                                                                 "alt": icon,
                                                                 "tooltip": format!(
                                                                     "{}\nIdle time: {}\nUptime: {}\nPaused: {}\nManually paused: {}\nApp blocking: {}",
