@@ -13,9 +13,7 @@
 </p>
 
 <p align="center">
-  <b>Join the Official Stasis Discord!</b><br>
-  <a href="https://discord.gg/v6gxRDjn">👉 Click here to join the community</a>
-</p>
+  <b>Join the Official Stasis Discord!</b><br></p>
 
 
 <p align="center">
