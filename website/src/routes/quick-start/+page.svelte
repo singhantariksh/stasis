@@ -86,10 +86,7 @@
       <div class="warning">
         <strong>⚠️ Important:</strong> Before running Stasis, you must be part of the <code>input</code> group.
       </div>
-      <p>
-        On first run, Stasis automatically generates a configuration file at 
-        <code>$XDG_CONFIG_HOME/stasis/stasis.rune</code> (typically <code>~/.config/stasis/stasis.rune</code>).
-      </p>
+  
     </section>
     
     <section id="input-group">
@@ -99,9 +96,14 @@
       <p>You should see output like:</p>
       <pre><code>dustin : dustin wheel audio input storage video</code></pre>
       <p>If <code>input</code> is missing, add yourself to the group:</p>
-      <pre><code>sudo usermod -a -G input $USER</code></pre>
+      <pre><code>sudo usermod -aG input $USER</code></pre>
       <p class="note">
-        <strong>Note:</strong> You'll need to log out and back in for group changes to take effect.
+        <strong>Note:</strong> You'll need to log out and back in or restart your computer for group changes to take effect.
+      </p>
+
+      <p class="note">
+        <strong>Note:</strong> On first run, Stasis automatically generates a configuration file at 
+        <code>$XDG_CONFIG_HOME/stasis/stasis.rune</code> (typically <code>~/.config/stasis/stasis.rune</code>).
       </p>
     </section>
     
