@@ -259,11 +259,6 @@
 
   /* Tablet and Mobile */
   @media (max-width: 1024px) {
-    :global(.content > .hero) {
-      margin: -1rem;
-      margin-top: -4rem;
-    }
-    
     .hero {
       min-height: 100vh;
       padding: 100px 20px 40px;

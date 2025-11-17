@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CodeBlock from '$lib/components/CodeBlock.svelte';
   
   let activeSection = $state('');
   
@@ -40,6 +41,33 @@
       });
     }
   }
+  
+  // Code examples
+  const waybarIconCode = `"custom/stasis": {
+  "exec": "stasis info --json",
+  "format": "{icon}",
+  "format-icons": {
+      "idle_active": "",
+      "idle_inhibited": "",
+      "manually_inhibited": "",
+      "not_running": "󰒲"
+  },
+  "tooltip": true,
+  "on-click": "stasis toggle-inhibit",
+  "interval": 2,
+  "restart-interval": 2,
+  "return-type": "json"
+}`;
+
+  const waybarTextCode = `"custom/stasis": {
+  "exec": "stasis info --json",
+  "format": "{text}",
+  "tooltip": true,
+  "on-click": "stasis toggle-inhibit",
+  "interval": 2,
+  "restart-interval": 2,
+  "return-type": "json"
+}`;
 </script>
 
 <div class="page-container">
@@ -69,33 +97,11 @@
       <p>To use Stasis with waybar is fairly straightforward. Below is an example custom module for waybar:</p>
       
       <h4>Icon-based Display</h4>
-      <pre><code>"custom/stasis": {'{'}
-  "exec": "stasis info --json",
-  "format": "{'{'}icon{'}'}",
-  "format-icons": {'{'}
-      "idle_active": "",
-      "idle_inhibited": "",
-      "manually_inhibited": "",
-      "not_running": "󰒲"
-  {'}'},
-  "tooltip": true,
-  "on-click": "stasis toggle-inhibit",
-  "interval": 2,
-  "restart-interval": 2,
-  "return-type": "json"
-{'}'}</code></pre>
+      <CodeBlock code={waybarIconCode} language="json" />
 
       <h4>Text-based Display</h4>
       <p>Or you can just display text if you don't want icons:</p>
-      <pre><code>"custom/stasis": {'{'}
-  "exec": "stasis info --json",
-  "format": "{'{'}text{'}'}",
-  "tooltip": true,
-  "on-click": "stasis toggle-inhibit",
-  "interval": 2,
-  "restart-interval": 2,
-  "return-type": "json"
-{'}'}</code></pre>
+      <CodeBlock code={waybarTextCode} language="json" />
     </section>
   </main>
 </div>
@@ -216,28 +222,12 @@ code {
   color: var(--text-primary);
 }
 
-pre {
-  background: var(--bg-secondary);
-  padding: 16px;
-  border-radius: 6px;
-  overflow-x: auto;
-  margin: 16px 0;
-  border: 1px solid var(--border-color);
-}
-
-pre code {
-  background: none;
-  padding: 0;
-  font-size: 0.9rem;
-  word-break: normal;
-}
-
 /* === MOBILE === */
 @media (max-width: 768px) {
   .page-container {
     grid-template-columns: 1fr;
     gap: 20px;
-    padding: 80px 16px 20px; /* Account for fixed topbar */
+    padding: 80px 16px 20px;
   }
 
   .links-nav {
@@ -291,12 +281,6 @@ pre code {
   h4 {
     font-size: 1.05rem;
   }
-
-  pre {
-    padding: 12px;
-    font-size: 0.85rem;
-    margin: 12px 0;
-  }
 }
 
 /* === TINY DEVICES === */
@@ -322,5 +306,4 @@ pre code {
     font-size: 1.25rem;
   }
 }
-
 </style>

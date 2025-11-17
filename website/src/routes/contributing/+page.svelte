@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CodeBlock from '$lib/components/CodeBlock.svelte';
   
   let activeSection = $state('');
   
@@ -58,6 +59,12 @@
       });
     }
   }
+  
+  // Code examples
+  const cloneCode = `git clone https://github.com/YOUR_USERNAME/stasis.git
+cd stasis`;
+
+  const branchCode = `git checkout -b feature/your-feature-name`;
 </script>
 
 <div class="page-container">
@@ -184,8 +191,7 @@
           <div class="step-number">2</div>
           <div class="step-content">
             <h4>Clone Your Fork</h4>
-            <pre><code>git clone https://github.com/YOUR_USERNAME/stasis.git
-cd stasis</code></pre>
+            <CodeBlock code={cloneCode} language="bash" />
           </div>
         </div>
 
@@ -193,7 +199,7 @@ cd stasis</code></pre>
           <div class="step-number">3</div>
           <div class="step-content">
             <h4>Create a Branch</h4>
-            <pre><code>git checkout -b feature/your-feature-name</code></pre>
+            <CodeBlock code={branchCode} language="bash" />
           </div>
         </div>
 
@@ -460,31 +466,13 @@ cd stasis</code></pre>
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     color: var(--text-primary);
-    word-break: break-all;
-  }
-
-  pre {
-    background: var(--bg-secondary);
-    padding: 20px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 16px 0;
-    border: 1px solid var(--border-color);
-    line-height: 1.5;
-  }
-
-  pre code {
-    background: none;
-    padding: 0;
-    font-size: 0.9rem;
-    word-break: normal;
   }
 
   @media (max-width: 968px) {
     .page-container {
       grid-template-columns: 1fr;
       gap: 20px;
-      padding: 80px 16px 20px; /* Extra top padding for hamburger menu */
+      padding: 80px 16px 20px;
     }
     
     .links-nav {
@@ -528,7 +516,7 @@ cd stasis</code></pre>
     h2 {
       font-size: 1.4rem;
       margin: 32px 0 12px 0;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
 
     h3 {
@@ -541,7 +529,7 @@ cd stasis</code></pre>
 
     section {
       margin-bottom: 32px;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
 
     p {
@@ -601,18 +589,8 @@ cd stasis</code></pre>
     code {
       font-size: 0.85em;
     }
-
-    pre {
-      padding: 12px;
-      font-size: 0.8rem;
-    }
-
-    pre code {
-      font-size: 0.8rem;
-    }
   }
 
-  /* Extra small devices */
   @media (max-width: 480px) {
     .page-container {
       padding: 70px 12px 20px;
@@ -642,15 +620,6 @@ cd stasis</code></pre>
       width: 36px;
       height: 36px;
       font-size: 1rem;
-    }
-
-    pre {
-      font-size: 0.75rem;
-      padding: 10px;
-    }
-
-    pre code {
-      font-size: 0.75rem;
     }
   }
 </style>

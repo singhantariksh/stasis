@@ -44,7 +44,7 @@
 </script>
 
 <svelte:head>
-  <link rel="icon" href="{base}/favicon.png" type="image/png" sizes="32x32" />
+  <link rel="icon" href="{base}/favicon.png" type="image/png" />
 </svelte:head>
 
 <div class="layout">
@@ -81,11 +81,17 @@
     display: grid;
     grid-template-rows: auto 1fr auto;
     min-height: 100vh;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
   
   .inner {
     display: grid;
     grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
   
   .content {
@@ -93,6 +99,7 @@
     max-width: 1200px;
     margin: 0 auto;
     padding: 2rem 1rem;
+    box-sizing: border-box;
   }
   
   /* Hamburger menu button */
@@ -137,6 +144,7 @@
     .content {
       padding: 1rem;
       padding-top: 4rem; /* Space for hamburger button */
+      max-width: 100%;
     }
   }
   

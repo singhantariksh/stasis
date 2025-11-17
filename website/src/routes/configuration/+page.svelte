@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CodeBlock from '$lib/components/CodeBlock.svelte';
   
   let activeSection = $state('');
   
@@ -65,191 +66,47 @@
       });
     }
   }
-</script>
-
-<div class="page-container">
-  <nav class="links-nav">
-    <div class="nav-title">On this page</div>
-    <ul>
-      {#each sections as section}
-        <li>
-          <button
-            class:active={activeSection === section.id}
-            onclick={() => scrollToSection(section.id)}
-          >
-            {section.title}
-          </button>
-        </li>
-      {/each}
-    </ul>
-  </nav>
   
-  <main class="content">
-    <h1>Configuration</h1>
-    
-    <section id="overview">
-      <h2>Overview</h2>
-      <p>
-        Stasis uses a <code>.rune</code> configuration file located at 
-        <code>$XDG_CONFIG_HOME/stasis/stasis.rune</code> (typically <code>~/.config/stasis/stasis.rune</code>).
-        On first run, Stasis automatically generates a default configuration file with sensible defaults.
-      </p>
-      <p>
-        The default configuration template is located at <code>/etc/stasis/stasis.rune</code>.
-      </p>
-      <p>
-        The configuration is structured hierarchically with a main <code>stasis:</code> block containing
-        all settings, actions, and laptop-specific power profiles.
-      </p>
-    </section>
-    
-    <section id="global">
-      <h2>Global Settings</h2>
-      <p>At the top of your config, you can define global variables and metadata:</p>
-      <pre><code>@author "Your Name"
+  // Code examples
+  const globalSettingsCode = `@author "Your Name"
 @description "Stasis configuration file"
 
 # Define global variables for reuse
-default_timeout 300  # 5 minutes</code></pre>
-      <p>
-        Global variables can be referenced throughout your configuration, making it easier to maintain consistent values.
-      </p>
-    </section>
-    
-    <section id="stasis-block">
-      <h2>Stasis Block</h2>
-      <p>All configuration lives within the <code>stasis:</code> block:</p>
-      <pre><code>stasis:
+default_timeout 300  # 5 minutes`;
+
+  const stasisBlockCode = `stasis:
   pre_suspend_command "hyprlock"
   monitor_media true
   ignore_remote_media true
   respect_idle_inhibitors true
   
   # ... action blocks and laptop configs
-end</code></pre>
-      
-      <h3>Pre-Suspend Command</h3>
-      <p>
-        <code>pre_suspend_command</code> runs before the system suspends. Commonly used to lock the screen:
-      </p>
-      <pre><code>pre_suspend_command "hyprlock"</code></pre>
-    </section>
-    
-    <section id="media">
-      <h2>Media Monitoring</h2>
-      
-      <h3>Media Playback</h3>
-      <p>Control whether Stasis monitors media playback to prevent idle actions:</p>
-      <pre><code>monitor_media true
-ignore_remote_media true</code></pre>
-      <ul>
-        <li><code>monitor_media</code> - When true, active media playback prevents idle timeouts</li>
-        <li><code>ignore_remote_media</code> - Ignores media from remote sources (KDEConnect, Spotify remote play, etc.)</li>
-      </ul>
-      
-      <h3>Media Blacklist</h3>
-      <p>Ignore specific media players when checking for active playback:</p>
-      <pre><code>media_blacklist ["spotify", "rhythmbox"]</code></pre>
-    </section>
-    
-    <section id="inhibitors">
-      <h2>Inhibitors</h2>
-      
-      <h3>Idle Inhibitors</h3>
-      <p>Respect system-wide idle inhibitors from other applications:</p>
-      <pre><code>respect_idle_inhibitors true</code></pre>
-      
-      <h3>Application Inhibitors</h3>
-      <p>
-        Specify applications that should prevent idle actions when active.
-        Supports exact names and regex patterns:
-      </p>
-      <pre><code>inhibit_apps [
+end`;
+
+  const preSuspendCode = `pre_suspend_command "hyprlock"`;
+
+  const mediaMonitoringCode = `monitor_media true
+ignore_remote_media true`;
+
+  const mediaBlacklistCode = `media_blacklist ["spotify", "rhythmbox"]`;
+
+  const idleInhibitorsCode = `respect_idle_inhibitors true`;
+
+  const appInhibitorsCode = `inhibit_apps [
   "vlc"
   "Spotify"
   "mpv"
-  r".*\.exe"           # Any .exe (Wine/Proton)
+  r".*\\.exe"           # Any .exe (Wine/Proton)
   r"steam_app_.*"      # Steam games
   r"firefox.*"         # Firefox windows
-]</code></pre>
-      
-      <div class="info">
-        <strong>Regex Pattern Guidelines:</strong>
-        <ul>
-          <li>Use raw string syntax: <code>r"pattern"</code> for all regex patterns</li>
-          <li>Escape special characters properly: <code>\.</code> for literal dots, <code>\d+</code> for digits</li>
-          <li>Use <code>.*</code> for wildcard matching</li>
-          <li>Use <code>^</code> for start-of-string and <code>$</code> for end-of-string anchors</li>
-          <li>Test your patterns with verbose logging to ensure they match correctly</li>
-          <li><strong>NOTE:</strong> Stasis uses the <code>regex</code> crate for pattern matching</li>
-        </ul>
-      </div>
-    </section>
-    
-    <section id="laptop">
-      <h2>Laptop Settings</h2>
-      
-      <h3>Lid Actions</h3>
-      <p>Configure what happens when the laptop lid closes or opens:</p>
-      <pre><code>lid_close_action "lock-screen"
-lid_open_action "wake"</code></pre>
-      
-      <div class="info">
-        <strong>Available lid_close_action options:</strong>
-        <ul>
-          <li><code>lock-screen</code> - Lock the screen</li>
-          <li><code>suspend</code> - Suspend the system</li>
-          <li><code>custom</code> - Run a custom command</li>
-          <li><code>ignore</code> - Do nothing</li>
-        </ul>
-      </div>
-      
-      <div class="info">
-        <strong>Available lid_open_action options:</strong>
-        <ul>
-          <li><code>wake</code> - Wake the system</li>
-          <li><code>custom</code> - Run a custom command</li>
-          <li><code>ignore</code> - Do nothing</li>
-        </ul>
-      </div>
-      
-      <h3>Debounce</h3>
-      <p>
-        Prevent rapid lid open/close events from triggering multiple actions.
-        Default is 3 seconds:
-      </p>
-      <pre><code>debounce_seconds 4</code></pre>
-    </section>
-    
-    <section id="actions">
-      <h2>Idle Actions</h2>
-      <p>
-        Stasis supports several built-in action types that trigger after periods of inactivity.
-        Each action block has three key parameters:
-      </p>
-      <ul>
-        <li><code>timeout</code> - Seconds of idle time before triggering (required)</li>
-        <li><code>command</code> - Command to run when action triggers (required)</li>
-        <li><code>resume-command</code> - Command to run when activity resumes (optional)</li>
-      </ul>
-      
-      <h3>Built-in Action Types</h3>
-      <ul>
-        <li><code>lock_screen</code> / <code>lock-screen</code> - Lock the session</li>
-        <li><code>dpms</code> - Display power management (screen off)</li>
-        <li><code>suspend</code> - System suspend</li>
-        <li><code>brightness</code> - Adjust screen brightness (laptop only)</li>
-        <li><code>custom-*</code> - Custom actions with any name</li>
-      </ul>
-    </section>
-    
-    <section id="desktop">
-      <h2>Desktop Actions</h2>
-      <p>
-        Desktop actions apply to all devices (desktops and laptops when not in AC/battery profiles).
-        Define them directly under the <code>stasis:</code> block:
-      </p>
-      <pre><code>lock_screen:
+]`;
+
+  const lidActionsCode = `lid_close_action "lock-screen"
+lid_open_action "wake"`;
+
+  const debounceCode = `debounce_seconds 4`;
+
+  const desktopActionsCode = `lock_screen:
   timeout 300  # 5 minutes
   command "loginctl lock-session"
   resume-command "notify-send 'Welcome Back $env.USER!'"
@@ -265,40 +122,15 @@ suspend:
   timeout 1800  # 30 minutes
   command "systemctl suspend"
   resume-command None
-end</code></pre>
-      
-      <div class="warning">
-        <strong>🔒 loginctl Integration:</strong>
-        When using <code>loginctl lock-session</code> as your lock command, you <b>MUST</b> specify 
-        the actual locker via the <code>lock-command</code> parameter:
-        <pre><code>lock_screen:
+end`;
+
+  const loginctlLockCode = `lock_screen:
   timeout 300
   command "loginctl lock-session"
   lock-command "swaylock"  # REQUIRED when using loginctl
-end</code></pre>
-        <p>
-          The <code>lock-command</code> is <b>required</b> when <code>command</code> 
-          is set to <code>loginctl lock-session</code>. This tells loginctl which locker to use
-          when managing the lock state.
-        </p>
-        <p>
-          <b>Note:</b> You can lock your session at any time with 
-          <code>loginctl lock-session</code> even when using Stasis without needing 
-          <code>lock-command</code> in the config.
-        </p>
-      </div>
-    </section>
-    
-    <section id="ac-battery">
-      <h2>AC & Battery Profiles</h2>
-      <p>
-        Laptops can define separate action profiles for AC power and battery power.
-        These override desktop actions when applicable.
-      </p>
-      
-      <h3>AC Power Profile</h3>
-      <p>Actions when plugged in:</p>
-      <pre><code>on_ac:
+end`;
+
+  const acProfileCode = `on_ac:
   # Instant action (0 second timeout)
   custom-brightness-instant:
     timeout 0
@@ -324,11 +156,9 @@ end</code></pre>
     timeout 300
     command "systemctl suspend"
   end
-end</code></pre>
-      
-      <h3>Battery Profile</h3>
-      <p>More aggressive timeouts to save battery:</p>
-      <pre><code>on_battery:
+end`;
+
+  const batteryProfileCode = `on_battery:
   custom-brightness-instant:
     timeout 0
     command "brightnessctl set 40%"
@@ -355,18 +185,9 @@ end</code></pre>
     timeout 120  # 2 minutes
     command "systemctl suspend"
   end
-end</code></pre>
-      
-      <div class="info">
-        <strong>💡 Tip:</strong> Define instant actions (timeout 0) first to prevent them 
-        from retriggering after longer timeouts complete.
-      </div>
-    </section>
-    
-    <section id="example">
-      <h2>Full Example Configuration</h2>
-      <p>Here's the complete default configuration shipped with Stasis:</p>
-      <pre><code>@author "Dustin Pilgrim"
+end`;
+
+  const fullExampleCode = `@author "Dustin Pilgrim"
 @description "Stasis configuration file"
 
 # Global variable
@@ -394,7 +215,7 @@ stasis:
     "vlc"
     "Spotify"
     "mpv"
-    r".*\.exe"
+    r".*\\.exe"
     r"steam_app_.*"
     r"firefox.*"
   ]
@@ -477,7 +298,216 @@ stasis:
       command "systemctl suspend"
     end
   end
-end</code></pre>
+end`;
+</script>
+
+<div class="page-container">
+  <nav class="links-nav">
+    <div class="nav-title">On this page</div>
+    <ul>
+      {#each sections as section}
+        <li>
+          <button
+            class:active={activeSection === section.id}
+            onclick={() => scrollToSection(section.id)}
+          >
+            {section.title}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  </nav>
+  
+  <main class="content">
+    <h1>Configuration</h1>
+    
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>
+        Stasis uses a <code>.rune</code> configuration file located at 
+        <code>$XDG_CONFIG_HOME/stasis/stasis.rune</code> (typically <code>~/.config/stasis/stasis.rune</code>).
+        On first run, Stasis automatically generates a default configuration file with sensible defaults.
+      </p>
+      <p>
+        The default configuration template is located at <code>/etc/stasis/stasis.rune</code>.
+      </p>
+      <p>
+        The configuration is structured hierarchically with a main <code>stasis:</code> block containing
+        all settings, actions, and laptop-specific power profiles.
+      </p>
+    </section>
+    
+    <section id="global">
+      <h2>Global Settings</h2>
+      <p>At the top of your config, you can define global variables and metadata:</p>
+      <CodeBlock code={globalSettingsCode} language="rune" />
+      <p>
+        Global variables can be referenced throughout your configuration, making it easier to maintain consistent values.
+      </p>
+    </section>
+    
+    <section id="stasis-block">
+      <h2>Stasis Block</h2>
+      <p>All configuration lives within the <code>stasis:</code> block:</p>
+      <CodeBlock code={stasisBlockCode} language="rune" />
+      
+      <h3>Pre-Suspend Command</h3>
+      <p>
+        <code>pre_suspend_command</code> runs before the system suspends. Commonly used to lock the screen:
+      </p>
+      <CodeBlock code={preSuspendCode} language="rune" />
+    </section>
+    
+    <section id="media">
+      <h2>Media Monitoring</h2>
+      
+      <h3>Media Playback</h3>
+      <p>Control whether Stasis monitors media playback to prevent idle actions:</p>
+      <CodeBlock code={mediaMonitoringCode} language="rune" />
+      <ul>
+        <li><code>monitor_media</code> - When true, active media playback prevents idle timeouts</li>
+        <li><code>ignore_remote_media</code> - Ignores media from remote sources (KDEConnect, Spotify remote play, etc.)</li>
+      </ul>
+      
+      <h3>Media Blacklist</h3>
+      <p>Ignore specific media players when checking for active playback:</p>
+      <CodeBlock code={mediaBlacklistCode} language="rune" />
+    </section>
+    
+    <section id="inhibitors">
+      <h2>Inhibitors</h2>
+      
+      <h3>Idle Inhibitors</h3>
+      <p>Respect system-wide idle inhibitors from other applications:</p>
+      <CodeBlock code={idleInhibitorsCode} language="rune" />
+      
+      <h3>Application Inhibitors</h3>
+      <p>
+        Specify applications that should prevent idle actions when active.
+        Supports exact names and regex patterns:
+      </p>
+      <CodeBlock code={appInhibitorsCode} language="rune" />
+      
+      <div class="info">
+        <strong>Regex Pattern Guidelines:</strong>
+        <ul>
+          <li>Use raw string syntax: <code>r"pattern"</code> for all regex patterns</li>
+          <li>Escape special characters properly: <code>\.</code> for literal dots, <code>\d+</code> for digits</li>
+          <li>Use <code>.*</code> for wildcard matching</li>
+          <li>Use <code>^</code> for start-of-string and <code>$</code> for end-of-string anchors</li>
+          <li>Test your patterns with verbose logging to ensure they match correctly</li>
+          <li><strong>NOTE:</strong> Stasis uses the <code>regex</code> crate for pattern matching</li>
+        </ul>
+      </div>
+    </section>
+    
+    <section id="laptop">
+      <h2>Laptop Settings</h2>
+      
+      <h3>Lid Actions</h3>
+      <p>Configure what happens when the laptop lid closes or opens:</p>
+      <CodeBlock code={lidActionsCode} language="rune" />
+      
+      <div class="info">
+        <strong>Available lid_close_action options:</strong>
+        <ul>
+          <li><code>lock-screen</code> - Lock the screen</li>
+          <li><code>suspend</code> - Suspend the system</li>
+          <li><code>custom</code> - Run a custom command</li>
+          <li><code>ignore</code> - Do nothing</li>
+        </ul>
+      </div>
+      
+      <div class="info">
+        <strong>Available lid_open_action options:</strong>
+        <ul>
+          <li><code>wake</code> - Wake the system</li>
+          <li><code>custom</code> - Run a custom command</li>
+          <li><code>ignore</code> - Do nothing</li>
+        </ul>
+      </div>
+      
+      <h3>Debounce</h3>
+      <p>
+        Prevent rapid lid open/close events from triggering multiple actions.
+        Default is 3 seconds:
+      </p>
+      <CodeBlock code={debounceCode} language="rune" />
+    </section>
+    
+    <section id="actions">
+      <h2>Idle Actions</h2>
+      <p>
+        Stasis supports several built-in action types that trigger after periods of inactivity.
+        Each action block has three key parameters:
+      </p>
+      <ul>
+        <li><code>timeout</code> - Seconds of idle time before triggering (required)</li>
+        <li><code>command</code> - Command to run when action triggers (required)</li>
+        <li><code>resume-command</code> - Command to run when activity resumes (optional)</li>
+      </ul>
+      
+      <h3>Built-in Action Types</h3>
+      <ul>
+        <li><code>lock_screen</code> / <code>lock-screen</code> - Lock the session</li>
+        <li><code>dpms</code> - Display power management (screen off)</li>
+        <li><code>suspend</code> - System suspend</li>
+        <li><code>brightness</code> - Adjust screen brightness (laptop only)</li>
+        <li><code>custom-*</code> - Custom actions with any name</li>
+      </ul>
+    </section>
+    
+    <section id="desktop">
+      <h2>Desktop Actions</h2>
+      <p>
+        Desktop actions apply to all devices (desktops and laptops when not in AC/battery profiles).
+        Define them directly under the <code>stasis:</code> block:
+      </p>
+      <CodeBlock code={desktopActionsCode} language="rune" />
+      
+      <div class="warning">
+        <strong>🔒 loginctl Integration:</strong>
+        When using <code>loginctl lock-session</code> as your lock command, you <b>MUST</b> specify 
+        the actual locker via the <code>lock-command</code> parameter:
+        <CodeBlock code={loginctlLockCode} language="rune" />
+        <p>
+          The <code>lock-command</code> is <b>required</b> when <code>command</code> 
+          is set to <code>loginctl lock-session</code>. This tells loginctl which locker to use
+          when managing the lock state.
+        </p>
+        <p>
+          <b>Note:</b> You can lock your session at any time with 
+          <code>loginctl lock-session</code> even when using Stasis without needing 
+          <code>lock-command</code> in the config.
+        </p>
+      </div>
+    </section>
+    
+    <section id="ac-battery">
+      <h2>AC & Battery Profiles</h2>
+      <p>
+        Laptops can define separate action profiles for AC power and battery power.
+        These override desktop actions when applicable.
+      </p>
+      
+      <h3>AC Power Profile</h3>
+      <p>Actions when plugged in:</p>
+      <CodeBlock code={acProfileCode} language="rune" />
+      
+      <h3>Battery Profile</h3>
+      <p>More aggressive timeouts to save battery:</p>
+      <CodeBlock code={batteryProfileCode} language="rune" />
+      
+      <div class="info">
+        <strong>💡 Tip:</strong> Define instant actions (timeout 0) first to prevent them 
+        from retriggering after longer timeouts complete.
+      </div>
+    </section>
+    
+    <section id="example">
+      <h2>Full Example Configuration</h2>
+      <p>Here's the complete default configuration shipped with Stasis:</p>
+      <CodeBlock code={fullExampleCode} language="rune" />
     </section>
   </main>
 </div>
@@ -604,10 +634,6 @@ end</code></pre>
     font-size: 1.05rem;
   }
   
-  .warning pre {
-    margin: 12px 0;
-  }
-  
   .warning p {
     margin: 8px 0;
   }
@@ -637,31 +663,13 @@ end</code></pre>
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     color: var(--text-primary);
-    word-break: break-all;
-  }
-  
-  pre {
-    background: var(--bg-secondary);
-    padding: 20px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 20px 0;
-    border: 1px solid var(--border-color);
-    line-height: 1.5;
-  }
-  
-  pre code {
-    background: none;
-    padding: 0;
-    font-size: 0.9rem;
-    word-break: normal;
   }
   
   @media (max-width: 968px) {
     .page-container {
       grid-template-columns: 1fr;
       gap: 20px;
-      padding: 80px 16px 20px; /* Extra top padding for hamburger menu */
+      padding: 80px 16px 20px;
     }
     
     .links-nav {
@@ -706,7 +714,7 @@ end</code></pre>
     h2 {
       font-size: 1.4rem;
       margin: 32px 0 12px 0;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
     
     h3 {
@@ -716,7 +724,7 @@ end</code></pre>
     
     section {
       margin-bottom: 32px;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
     
     p {
@@ -742,19 +750,8 @@ end</code></pre>
     code {
       font-size: 0.85em;
     }
-    
-    pre {
-      padding: 12px;
-      font-size: 0.75rem;
-      margin: 12px 0;
-    }
-    
-    pre code {
-      font-size: 0.75rem;
-    }
   }
   
-  /* Extra small devices */
   @media (max-width: 480px) {
     .page-container {
       padding: 70px 12px 20px;
@@ -779,15 +776,6 @@ end</code></pre>
     
     h3 {
       font-size: 1.1rem;
-    }
-    
-    pre {
-      font-size: 0.7rem;
-      padding: 10px;
-    }
-    
-    pre code {
-      font-size: 0.7rem;
     }
   }
 </style>

@@ -1,10 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CodeBlock from '$lib/components/CodeBlock.svelte';
   
   let activeSection = $state('');
   
   const sections = [
-    { id: 'waybar', title: 'Waybar' }
+    { id: 'app-detection', title: 'App Detection' },
+    { id: 'regex-patterns', title: 'Regex Patterns' },
+    { id: 'service-issues', title: 'Service Issues' },
+    { id: 'config-reload', title: 'Config Reload' },
+    { id: 'config-errors', title: 'Config Errors' },
+    { id: 'brightness', title: 'Brightness' },
+    { id: 'input-timer', title: 'Input Timer' },
+    { id: 'help', title: 'More Help' }
   ];
   
   onMount(() => {
@@ -57,6 +65,12 @@
       });
     }
   }
+  
+  // Code examples
+  const serviceLogsCode = `journalctl --user -u stasis.service`;
+  const reloadCode = `systemctl --user restart stasis.service`;
+  const videoGroupCode = `sudo gpasswd -a <user> video`;
+  const inputGroupCode = `sudo gpasswd -a <user> input`;
 </script>
 
 
@@ -110,7 +124,7 @@
         <li>Verify the <code>ExecStart</code> path in your systemd service file points to the correct binary location</li>
         <li>Check service logs for specific errors:</li>
       </ul>
-      <pre><code>journalctl --user -u stasis.service</code></pre>
+      <CodeBlock code={serviceLogsCode} language="bash" />
       <p>Common issues include incorrect binary paths or missing dependencies.</p>
     </section>
     
@@ -122,7 +136,7 @@
         <li>Check configuration syntax if reload fails</li>
         <li>Restart the service if reload continues to fail:</li>
       </ul>
-      <pre><code>systemctl --user restart stasis.service</code></pre>
+      <CodeBlock code={reloadCode} language="bash" />
     </section>
     
     <section id="config-errors">
@@ -150,7 +164,7 @@
       <div class="warning">
         <strong>⚠️ Video Group Required:</strong>
         <p>Check the logs with <code>cat ~/.cache/stasis/stasis.log</code>. If you see warnings about setting brightness, you need to add yourself to the <code>video</code> group:</p>
-        <pre><code>sudo gpasswd -a &lt;user&gt; video</code></pre>
+        <CodeBlock code={videoGroupCode} language="bash" />
         <p>Log out and back in for the group change to take effect.</p>
       </div>
     </section>
@@ -161,7 +175,7 @@
       <div class="warning">
         <strong>⚠️ Input Group Required:</strong>
         <p>Ensure your user is in the <code>input</code> group:</p>
-        <pre><code>sudo gpasswd -a &lt;user&gt; input</code></pre>
+        <CodeBlock code={inputGroupCode} language="bash" />
         <p>Log out and back in for the group change to take effect.</p>
       </div>
       <p>This is the most common cause of idle detection issues. See the <a href="/quick-start#prerequisites">Quick Start guide</a> for more details.</p>
@@ -185,7 +199,6 @@
 </div>
 
 <style>
-/* === LAYOUT === */
 .page-container {
   display: grid;
   grid-template-columns: 220px 1fr;
@@ -195,12 +208,11 @@
   padding: 40px 20px;
 }
 
-/* === SIDE NAVIGATION === */
 .links-nav {
   position: sticky;
   top: 80px;
   height: fit-content;
-  padding-top: 8px; /* FIX: consistent top padding like FAQ */
+  padding-top: 8px;
 }
 
 .nav-title {
@@ -214,7 +226,7 @@
 
 .links-nav ul {
   list-style: none;
-  padding: 6px 0 0 0; /* padding to avoid flush anchor */
+  padding: 6px 0 0 0;
   margin: 0;
 }
 
@@ -247,7 +259,6 @@
   font-weight: 500;
 }
 
-/* === CONTENT === */
 .content {
   min-width: 0;
 }
@@ -335,22 +346,12 @@ code {
   word-break: break-word;
 }
 
-pre {
-  background: var(--bg-secondary);
-  padding: 20px;
-  border-radius: 6px;
-  overflow-x: auto;
-  margin: 20px 0;
-  border: 1px solid var(--border-color);
-  line-height: 1.5;
-}
-
 /* === MOBILE: unify and simplify === */
 @media (max-width: 968px) {
   .page-container {
     grid-template-columns: 1fr;
     gap: 20px;
-    padding: 80px 16px 20px; /* hamburger space */
+    padding: 80px 16px 20px;
   }
 
   .links-nav {
@@ -404,13 +405,8 @@ pre {
     scroll-margin-top: 100px;
   }
 
-  p, pre, ul {
+  p, ul {
     font-size: 0.95rem;
-  }
-
-  pre {
-    padding: 12px;
-    font-size: 0.8rem;
   }
 }
 
@@ -432,11 +428,5 @@ pre {
   h2 {
     font-size: 1.25rem;
   }
-
-  pre {
-    font-size: 0.75rem;
-    padding: 10px;
-  }
 }
-
 </style>

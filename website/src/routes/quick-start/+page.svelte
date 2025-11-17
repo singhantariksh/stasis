@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CodeBlock from '$lib/components/CodeBlock.svelte';
   
   let activeSection = $state('');
   
@@ -59,6 +60,26 @@
       });
     }
   }
+  
+  const systemdServiceCode = `[Unit]
+Description=Stasis Wayland Idle Manager
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/stasis
+Restart=always
+RestartSec=5
+Environment=WAYLAND_DISPLAY=wayland-0
+# Optional: wait until WAYLAND_DISPLAY exists
+ExecStartPre=/bin/sh -c 'while [ ! -e /run/user/%U/wayland-0 ]; do sleep 0.1; done'
+
+[Install]
+WantedBy=default.target`;
+  
+  const enableServiceCode = `systemctl --user enable stasis.service
+systemctl --user start stasis.service`;
 </script>
 
 <div class="page-container">
@@ -86,17 +107,19 @@
       <div class="warning">
         <strong>⚠️ Important:</strong> Before running Stasis, you must be part of the <code>input</code> group.
       </div>
-  
     </section>
     
     <section id="input-group">
       <h2>Input Group Setup</h2>
       <p>Check if you're already in the input group:</p>
-      <pre><code>groups $USER</code></pre>
+      <CodeBlock code="groups $USER" />
+      
       <p>You should see output like:</p>
-      <pre><code>dustin : dustin wheel audio input storage video</code></pre>
+      <CodeBlock code="dustin : dustin wheel audio input storage video" />
+      
       <p>If <code>input</code> is missing, add yourself to the group:</p>
-      <pre><code>sudo usermod -aG input $USER</code></pre>
+      <CodeBlock code="sudo usermod -aG input $USER" />
+      
       <p class="note">
         <strong>Note:</strong> You'll need to log out and back in or restart your computer for group changes to take effect.
       </p>
@@ -113,7 +136,8 @@
         Stasis must be started from within a running Wayland session. 
         Simply run:
       </p>
-      <pre><code>stasis</code></pre>
+      <CodeBlock code="stasis" />
+      
       <p>
         This is useful for testing, but for daily use we recommend setting up 
         the systemd service below.
@@ -126,29 +150,13 @@
         For automatic startup, create a systemd user service at 
         <code>~/.config/systemd/user/stasis.service</code>:
       </p>
-      <pre><code>[Unit]
-Description=Stasis Wayland Idle Manager
-After=graphical-session.target
-Wants=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/stasis
-Restart=always
-RestartSec=5
-Environment=WAYLAND_DISPLAY=wayland-0
-# Optional: wait until WAYLAND_DISPLAY exists
-ExecStartPre=/bin/sh -c 'while [ ! -e /run/user/%U/wayland-0 ]; do sleep 0.1; done'
-
-[Install]
-WantedBy=default.target</code></pre>
+      <CodeBlock code={systemdServiceCode} language="ini" />
       
       <p>Enable and start the service:</p>
-      <pre><code>systemctl --user enable stasis.service
-systemctl --user start stasis.service</code></pre>
+      <CodeBlock code={enableServiceCode} language="bash" />
       
       <p>Check the service status:</p>
-      <pre><code>systemctl --user status stasis.service</code></pre>
+      <CodeBlock code="systemctl --user status stasis.service" />
     </section>
   </main>
 </div>
@@ -266,30 +274,13 @@ systemctl --user start stasis.service</code></pre>
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     color: var(--text-primary);
-    word-break: break-all;
-  }
-  
-  pre {
-    background: var(--bg-secondary);
-    padding: 16px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 16px 0;
-    border: 1px solid var(--border-color);
-  }
-  
-  pre code {
-    background: none;
-    padding: 0;
-    font-size: 0.9rem;
-    word-break: normal;
   }
   
   @media (max-width: 768px) {
     .page-container {
       grid-template-columns: 1fr;
       gap: 20px;
-      padding: 80px 16px 20px; /* Extra top padding for hamburger menu */
+      padding: 80px 16px 20px;
     }
     
     .links-nav {
@@ -334,12 +325,12 @@ systemctl --user start stasis.service</code></pre>
     h2 {
       font-size: 1.4rem;
       margin: 32px 0 12px 0;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
     
     section {
       margin-bottom: 32px;
-      scroll-margin-top: 100px; /* Account for hamburger menu */
+      scroll-margin-top: 100px;
     }
     
     p {
@@ -355,19 +346,8 @@ systemctl --user start stasis.service</code></pre>
     code {
       font-size: 0.85em;
     }
-    
-    pre {
-      padding: 12px;
-      font-size: 0.8rem;
-      margin: 12px 0;
-    }
-    
-    pre code {
-      font-size: 0.8rem;
-    }
   }
   
-  /* Extra small devices */
   @media (max-width: 480px) {
     .page-container {
       padding: 70px 12px 20px;
