@@ -63,11 +63,26 @@ pub async fn spawn_ipc_socket_with_listener(
                                                 }
                                             }
                                         }
-
-                                        "pause" => {
-                                            let mut mgr = manager.lock().await;
-                                            mgr.pause(true).await;
-                                            "Idle manager paused".to_string()
+                                       
+                                        cmd if cmd.starts_with("pause") => {
+                                            let parts: Vec<&str> = cmd.split_whitespace().collect();
+                                            
+                                            if parts.len() == 1 {
+                                                // Simple "pause" with no duration
+                                                let mut mgr = manager.lock().await;
+                                                mgr.pause(true).await;
+                                                "Idle manager paused".to_string()
+                                            } else {
+                                                // "pause 5m" or "pause 1h 30m" etc.
+                                                let duration_str = parts[1..].join(" ");
+                                                match crate::ipc::commands::pause_for_duration(
+                                                    manager.clone(), 
+                                                    &duration_str
+                                                ).await {
+                                                    Ok(msg) => msg,
+                                                    Err(e) => format!("ERROR: {}", e),
+                                                }
+                                            }
                                         }
 
                                         "resume" => {
