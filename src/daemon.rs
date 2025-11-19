@@ -42,13 +42,13 @@ pub async fn run_daemon(listener: UnixListener, verbose: bool) -> Result<()> {
     let lock_handle = spawn_lock_watcher(Arc::clone(&manager)).await;
     let input_handle = spawn_input_task(Arc::clone(&manager));
     
-    // Store handles in manager
+    // Store handles in manager - CRITICAL: Use explicit scope to drop lock
     {
         let mut mgr = manager.lock().await;
         mgr.idle_task_handle = Some(idle_handle);
         mgr.lock_task_handle = Some(lock_handle);
         mgr.input_task_handle = Some(input_handle);
-    } 
+    } // Lock is dropped here before continuing
     
     // --- Spawn suspend event listener ---
     let dbus_manager = Arc::clone(&manager);
@@ -59,7 +59,10 @@ pub async fn run_daemon(listener: UnixListener, verbose: bool) -> Result<()> {
     });
 
     // --- AC/Battery Detection (DETECT FIRST, synchronously) ---
-    detect_initial_power_state(&manager).await;
+    // Use explicit scope like in original working code
+    {
+        detect_initial_power_state(&manager).await;
+    }
     
     // --- AC/Battery Detection ---
     let laptop_manager = Arc::clone(&manager);
@@ -69,7 +72,7 @@ pub async fn run_daemon(listener: UnixListener, verbose: bool) -> Result<()> {
     {
         let mut mgr = manager.lock().await;
         mgr.trigger_instant_actions().await;
-    }
+    } // Lock dropped here
     
     // --- Spawn app inhibit task ---
     let app_inhibitor = spawn_app_inhibit_task(
