@@ -81,6 +81,10 @@ impl StasisConfig {
                 action.kind,
                 action.command
             ));
+            if let Some(lock_cmd) = &action.lock_command {
+                out.push_str(&format!(" LockCommand=\"{}\"", lock_cmd));
+            }
+
             if let Some(resume_cmd) = &action.resume_command {
                 out.push_str(&format!(" ResumeCommand=\"{}\"", resume_cmd));
             }

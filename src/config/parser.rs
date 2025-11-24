@@ -305,6 +305,10 @@ pub fn load_config() -> Result<StasisConfig> {
             "    {}: timeout={}s, command=\"{}\"",
             action.name, action.timeout, action.command
         );
+
+        if let Some(lock_cmd) = &action.lock_command {
+            details.push_str(&format!(", lock_command=\"{}\"", lock_cmd));
+        }
         if let Some(resume_cmd) = &action.resume_command {
             details.push_str(&format!(", resume_command=\"{}\"", resume_cmd));
         }

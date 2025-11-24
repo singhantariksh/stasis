@@ -62,10 +62,10 @@
     }
   }
   
-  const systemdServiceCode = `[Unit]
-Description=Stasis Wayland Idle Manager
-After=graphical-session.target
-PartOf=graphical-session.target
+  const hyprlandServiceCode = `[Unit]
+Description=Stasis Wayland Idle Manager (Hyprland)
+After=hyprland-session.target
+PartOf=hyprland-session.target
 
 [Service]
 Type=simple
@@ -73,12 +73,28 @@ ExecStart=/usr/bin/stasis
 Restart=on-failure
 RestartSec=3
 
-# Import environment variables from the user session
 ExecStartPre=/usr/bin/systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 ExecStartPre=/bin/sh -c 'until [ -n "$WAYLAND_DISPLAY" ]; do sleep 0.5; done'
 
 [Install]
-WantedBy=graphical-session.target`;
+WantedBy=hyprland-session.target`;
+
+  const niriServiceCode = `[Unit]
+Description=Stasis Wayland Idle Manager (Niri)
+After=niri.service
+PartOf=niri.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/stasis
+Restart=on-failure
+RestartSec=3
+
+ExecStartPre=/usr/bin/systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+ExecStartPre=/bin/sh -c 'until [ -n "$WAYLAND_DISPLAY" ]; do sleep 0.5; done'
+
+[Install]
+WantedBy=niri.service`;
   
   const enableServiceCode = `# Reload systemd to recognize the new service
 systemctl --user daemon-reload
@@ -180,14 +196,24 @@ systemctl --user status stasis.service`;
         Stasis starts automatically with your graphical session and restarts if it crashes.
       </p>
       
+      <div class="note">
+        <strong>📝 Compositor-Specific:</strong> The service file must match your compositor. 
+        Choose the appropriate example below for your setup.
+      </div>
+      
       <h3>Create the Service File</h3>
       <p>
-        Create a service file at <code>~/.config/systemd/user/stasis.service</code> with the following content:
+        Create a service file at <code>~/.config/systemd/user/stasis.service</code> with the content for your compositor:
       </p>
-      <CodeBlock code={systemdServiceCode} language="ini" />
+      
+      <h4>Hyprland</h4>
+      <CodeBlock code={hyprlandServiceCode} language="ini" />
+      
+      <h4>Niri</h4>
+      <CodeBlock code={niriServiceCode} language="ini" />
       
       <div class="note">
-        <strong>📝 Path Note:</strong> The service file uses <code>/usr/bin/stasis</code> as the default path. 
+        <strong>📝 Path Note:</strong> The service files use <code>/usr/bin/stasis</code> as the default path. 
         If you installed Stasis to a different location (e.g., <code>~/.local/bin/stasis</code>), 
         update the <code>ExecStart=</code> line accordingly.
       </div>
@@ -352,6 +378,13 @@ spawn-at-startup "sh" "-c" "sleep 2 && stasis"`} />
     margin: 32px 0 12px 0;
     color: var(--text-primary);
   }
+  
+  h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 24px 0 12px 0;
+    color: var(--text-primary);
+  }
  
   section {
     margin-bottom: 48px;
@@ -461,6 +494,11 @@ spawn-at-startup "sh" "-c" "sleep 2 && stasis"`} />
       margin: 24px 0 10px 0;
     }
     
+    h4 {
+      font-size: 1.05rem;
+      margin: 20px 0 10px 0;
+    }
+    
     section {
       margin-bottom: 32px;
       scroll-margin-top: 100px;
@@ -505,6 +543,10 @@ spawn-at-startup "sh" "-c" "sleep 2 && stasis"`} />
     
     h3 {
       font-size: 1.1rem;
+    }
+    
+    h4 {
+      font-size: 1rem;
     }
   }
 </style>
