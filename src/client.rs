@@ -174,9 +174,26 @@ async fn handle_simple_command(command: &str, success_msg: &str) -> Result<()> {
             let _ = stream.write_all(command.as_bytes()).await;
 
             let mut response = Vec::new();
-            let _ = timeout(Duration::from_millis(500), stream.read_to_end(&mut response)).await;
-            
-            println!("{}", success_msg);
+            match timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await {
+                Ok(Ok(_)) => {
+                    let response_text = String::from_utf8_lossy(&response);
+                    if response_text.starts_with("ERROR:") {
+                        eprintln!("{}", response_text.trim_start_matches("ERROR:").trim());
+                        process::exit(1);
+                    } else if !response_text.is_empty() {
+                        // Print the actual response from the daemon
+                        println!("{}", response_text);
+                    } else {
+                        // Fallback to success message if response is empty
+                        println!("{}", success_msg);
+                    }
+                }
+                Ok(Err(e)) => eprintln!("Failed to read response: {}", e),
+                Err(_) => {
+                    // On timeout, still show success message
+                    println!("{}", success_msg);
+                }
+            }
         }
         Ok(Err(_)) | Err(_) => {
             eprintln!("No running Stasis instance found");
@@ -185,3 +202,4 @@ async fn handle_simple_command(command: &str, success_msg: &str) -> Result<()> {
     }
     Ok(())
 }
+

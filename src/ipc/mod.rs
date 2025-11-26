@@ -44,6 +44,7 @@ pub async fn spawn_ipc_socket_with_listener(
 
                                     let response = match cmd.as_str() {
                                         // === CONFIG ===
+
                                         "reload" => {
                                             match config::parser::load_config() {
                                                 Ok(new_cfg) => {
@@ -52,10 +53,46 @@ pub async fn spawn_ipc_socket_with_listener(
                                                     mgr.recheck_media().await;
                                                     mgr.trigger_instant_actions().await;
                                                     
+                                                    // Capture info for display
+                                                    let idle_time = mgr.state.last_activity.elapsed();
+                                                    let uptime = mgr.state.start_time.elapsed();
+                                                    let manually_inhibited = mgr.state.manually_paused;
+                                                    let paused = mgr.state.paused;
+                                                    let media_blocking = mgr.state.media_blocking;
+                                                    let cfg_clone = mgr.state.cfg.clone();
+                                                    
                                                     drop(mgr);
+                                                    
+                                                    // Try to get app blocking status with timeout
+                                                    let app_blocking = match timeout(
+                                                        Duration::from_millis(100),
+                                                        async {
+                                                            let mut inhibitor = app_inhibitor.lock().await;
+                                                            inhibitor.is_any_app_running().await
+                                                        }
+                                                    ).await {
+                                                        Ok(result) => result,
+                                                        Err(_) => false,
+                                                    };
 
                                                     log_message("Config reloaded successfully");
-                                                    "Config reloaded successfully".to_string()
+                                                    
+                                                    // Return config info instead of just success message
+                                                    if let Some(cfg) = &cfg_clone {
+                                                        format!(
+                                                            "Config reloaded successfully\n\n{}",
+                                                            cfg.pretty_print(
+                                                                Some(idle_time),
+                                                                Some(uptime),
+                                                                Some(paused),
+                                                                Some(manually_inhibited),
+                                                                Some(app_blocking),
+                                                                Some(media_blocking)
+                                                            )
+                                                        )
+                                                    } else {
+                                                        "Config reloaded successfully".to_string()
+                                                    }
                                                 }
                                                 Err(e) => {
                                                     log_error_message(&format!("Failed to reload config: {}", e));
@@ -63,7 +100,7 @@ pub async fn spawn_ipc_socket_with_listener(
                                                 }
                                             }
                                         }
-                                       
+ 
                                         cmd if cmd.starts_with("pause") => {
                                             let parts: Vec<&str> = cmd.split_whitespace().collect();
                                             
