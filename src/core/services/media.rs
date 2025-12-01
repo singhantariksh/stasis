@@ -34,6 +34,26 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
         crate::log::log_message("Firefox MPRIS bridge not found, using standard MPRIS detection");
     }
 
+    let manager_clone = Arc::clone(&manager);
+    task::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+        let mut was_detected = skip_firefox;
+        
+        loop {
+            interval.tick().await;
+            let is_detected = firefox_extension_exists();
+            
+            if is_detected && !was_detected {
+                crate::log::log_message("Firefox MPRIS bridge now detected, spawning browser media monitor");
+                crate::core::services::browser_media::spawn_browser_media_monitor(Arc::clone(&manager_clone)).await;
+                was_detected = true;
+            } else if !is_detected && was_detected {
+                crate::log::log_message("Firefox MPRIS bridge lost");
+                was_detected = false;
+            }
+        }
+    });
+
     task::spawn(async move {
         let conn = match Connection::session().await {
             Ok(c) => c,

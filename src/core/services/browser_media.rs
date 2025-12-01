@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::os::unix::net::UnixStream;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use serde_json::Value;
@@ -12,7 +13,8 @@ use crate::core::manager::{
 use crate::log::{log_message, log_error_message};
 
 const BRIDGE_SOCKET: &str = "/tmp/mpris_bridge.sock";
-const POLL_INTERVAL_MS: u64 = 1000; // Poll every 1 second
+const POLL_INTERVAL_MS: u64 = 1000;
+static MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Query the browser media state from the Python bridge
 fn query_browser_status() -> Result<BrowserMediaState, String> {
@@ -53,6 +55,12 @@ struct BrowserMediaState {
 
 /// Spawn a background task that polls the browser media bridge
 pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
+    // Prevent multiple monitors from running
+    if MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
+        log_message("Browser media monitor already running");
+        return;
+    }
+
     tokio::spawn(async move {
         let mut poll_interval = interval(Duration::from_millis(POLL_INTERVAL_MS));
         let mut last_state: Option<BrowserMediaState> = None;
@@ -71,7 +79,7 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                     }
                     
                     // Check if state changed 
-                    let state_changed = last_state.as_ref().map(|last| {
+                   let state_changed = last_state.as_ref().map(|last| {
                         last.playing != state.playing ||
                         last.tab_count != state.tab_count ||
                         last.playing_tabs != state.playing_tabs
