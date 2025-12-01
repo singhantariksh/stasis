@@ -156,6 +156,12 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
                     mgr.state.media_playing = true;
                     mgr.state.media_blocking = true;
                 } else if !any_playing && mgr.state.media_playing {
+                    // MPRIS says nothing playing, but do final check with playerctl + pactl
+                    // This helps with multi-tab Firefox where one tab might still be playing
+                    if !skip_ff && has_playerctl_players() && has_any_media_playing() {
+                        // Still actually playing, don't stop blocking
+                        continue;
+                    }
                     decr_active_inhibitor(&mut mgr).await;
                     mgr.state.media_playing = false;
                     mgr.state.media_blocking = false;
@@ -191,6 +197,12 @@ pub fn check_media_playing(ignore_remote_media: bool, media_blacklist: &[String]
 
     if playing_players.is_empty() {
         return false;
+    }
+
+    // For fallback MPRIS (no extension): if playerctl shows players AND audio is playing, consider it active
+    // This helps with multi-tab Firefox where MPRIS might show "playing" but actual tab could be muted
+    if !skip_firefox && has_playerctl_players() && has_any_media_playing() {
+        return true;
     }
 
     // Check each player
@@ -272,3 +284,16 @@ fn has_running_sink() -> bool {
     let stdout = String::from_utf8_lossy(&output.stdout);
     !stdout.trim().is_empty()
 }
+
+fn has_playerctl_players() -> bool {
+    let output = match Command::new("playerctl")
+        .args(["-l"])
+        .output() {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    !stdout.trim().is_empty()
+}
+
