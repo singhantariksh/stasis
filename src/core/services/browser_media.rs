@@ -12,7 +12,7 @@ use crate::core::manager::{
 };
 use crate::log::{log_message, log_error_message};
 
-const BRIDGE_SOCKET: &str = "/tmp/mpris_bridge.sock";
+const BRIDGE_SOCKET: &str = "/tmp/media_bridge.sock";
 const POLL_INTERVAL_MS: u64 = 1000;
 static MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 

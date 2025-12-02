@@ -24,7 +24,7 @@ except ImportError:
     DBUS_AVAILABLE = False
 
 # Single socket for all communication
-QUERY_SOCKET = os.path.expanduser("/tmp/mpris_bridge.sock")
+QUERY_SOCKET = os.path.expanduser("/tmp/media_bridge.sock")
 
 def debug_print(msg):
     """Print debug message with timestamp"""

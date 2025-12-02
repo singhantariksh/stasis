@@ -29,7 +29,7 @@
   <a href="#-installation">Installation</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#compositor-support">Compositor Support</a> •
-  <a href="#-soundtabs-browser-plugin">SoundTabs Plugin</a> •
+  <a href="#-media-bridge-browser-plugin">Media Bridge Plugin</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -41,7 +41,7 @@ Stasis doesn't just lock your screen after a timer—it understands context. Wat
 
 - **🧠 Smart idle detection** with configurable timeouts
 - **🎵 Media-aware idle handling** – automatically detects media playback
-- **🌐 Per-tab browser detection** – optional [SoundTabs](#-soundtabs-browser-plugin) plugin for granular media tracking
+- **🌐 Per-tab browser detection** – optional [Media Bridge](#-media-bridge-browser-plugin) plugin for granular media tracking
 - **🚫 Application-specific inhibitors** – prevent idle when specific apps are running
 - **⏸️ Idle inhibitor respect** – honors Wayland idle inhibitor protocols
 - **🛌 Lid events via DBus** – detect laptop lid open/close events to manage idle
@@ -204,9 +204,9 @@ We welcome contributions! Adding support typically involves:
 
 Check existing implementations in the codebase for reference, and don't hesitate to open an issue if you need guidance.
 
-## 🌐 SoundTabs Browser Plugin
+## 🌐 Media Bridge Browser Plugin
 
-**[SoundTabs](https://github.com/saltnpepper97/soundtabs)** is an optional browser extension that provides accurate per-tab media detection. While SoundTabs is a standalone project not exclusive to Stasis, it solves critical browser media detection issues that benefit idle management.
+**[Media Bridge](https://github.com/saltnpepper97/soundtabs)** is an optional browser extension that provides accurate per-tab media detection. While SoundTabs is a standalone project not exclusive to Stasis, it solves critical browser media detection issues that benefit idle management.
 
 ### The Browser Media Problem
 
@@ -217,32 +217,32 @@ Standard browser MPRIS implementations have significant limitations:
 - **Poor muted tab handling** – Can't distinguish between muted and paused tabs
 - **Inaccurate state reporting** – Doesn't always reflect actual playback status
 
-SoundTabs fixes these issues by providing real-time, per-tab audio state directly from the browser.
+Media Bridge fixes these issues by providing real-time, per-tab audio state directly from the browser.
 
-### Why Use SoundTabs with Stasis?
+### Why Use Media Bridge with Stasis?
 
 - **🎯 Per-tab accuracy** – Know exactly which tab is playing media
 - **🔇 Muted tab detection** – Correctly detect when tabs are muted vs. paused
 - **⚡ Real-time updates** – Instant state changes without audio sink polling
-- **🔄 Seamless fallback** – Stasis automatically uses standard MPRIS if SoundTabs isn't installed
+- **🔄 Seamless fallback** – Stasis automatically uses standard MPRIS if Media Bridge isn't installed
 - **🪟 Works alongside other players** – Doesn't interfere with Spotify, VLC, or other media apps
 
 ### Browser Support
 
 | Browser | Status | Installation |
 |---------|--------|--------------|
-| **Firefox** | ✅ Available | [Install SoundTabs](https://github.com/saltnpepper97/soundtabs) |
+| **Firefox** | ✅ Available | [Install Media Bridge](https://github.com/saltnpepper97/media-bridge) |
 | **Chrome/Chromium** | 🚧 Coming Soon | Extension in development |
 | **Brave/Edge/Vivaldi** | 🚧 Coming Soon | Will use Chrome extension |
 
 ### How It Works with Stasis
 
-1. **With SoundTabs:** Stasis receives precise per-tab media state via Unix socket communication
-2. **Without SoundTabs:** Stasis falls back to standard MPRIS + audio sink detection
-3. **No configuration needed:** Stasis automatically detects and uses SoundTabs when available
+1. **With Media Bridge:** Stasis receives precise per-tab media state via Unix socket communication
+2. **Without Media Bridge:** Stasis falls back to standard MPRIS + audio sink detection
+3. **No configuration needed:** Stasis automatically detects and uses Media Bridge when available
 4. **Other media respected:** Non-browser media players continue to work through MPRIS
 
-> **📝 Note:** SoundTabs is completely optional and not Stasis-specific. Stasis works great without it using improved MPRIS detection with audio sink verification.
+> **📝 Note:** Media Bridge is completely optional and not Stasis-specific. Stasis works great without it using improved MPRIS detection with audio sink verification.
 
 ## 🔧 About RUNE Configuration
 

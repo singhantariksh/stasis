@@ -28,7 +28,7 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
 
     // If Firefox extension exists, spawn the browser media monitor
     if skip_firefox {
-        crate::log::log_message("SoundTabs plugin detected, spawning browser media monitor");
+        crate::log::log_message("Media Bridge plugin detected, spawning browser media monitor");
         crate::core::services::browser_media::spawn_browser_media_monitor(Arc::clone(&manager)).await;
     } else {
         crate::log::log_message("Firefox MPRIS bridge not found, using standard MPRIS detection");
@@ -175,7 +175,7 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
 // Detect if Firefox extension/script exists
 fn firefox_extension_exists() -> bool {
     // Just check for the socket (most reliable)
-    let socket_path = std::path::Path::new("/tmp/mpris_bridge.sock");
+    let socket_path = std::path::Path::new("/tmp/media_bridge.sock");
     socket_path.exists()
 }
 
