@@ -140,22 +140,19 @@ Notes:
 
 ### From Source
 
-Build and install manually for maximum control:
-
 #### Dependencies
 
-**Required:**
-- `git` – for cloning the repository
-- `cargo` / `rust` (1.89+) – Rust toolchain for building
-- `systemd` or `elogind` – for session management (elogind for non-systemd users)
-- `dbus` – D-Bus for inter-process communication
+```sh
+git
+cargo
+rust
+dbus
+libnotify (optional) - for desktop notifications
+playerctl (optional) - for enhanced media player detection
+pulseaudio/pipewire-pulse (optional) - audio sink detection for media handling
+```
 
-**Optional:**
-- `libnotify` – for desktop notifications
-- `playerctl` – enhanced media player detection
-- `pulseaudio` or `pipewire-pulse` – audio sink detection for media handling
-
-#### Build & Install
+Build and install manually for maximum control:
 
 ```bash
 # Clone and build
@@ -167,9 +164,6 @@ cargo build --release --locked
 sudo install -Dm755 target/release/stasis /usr/local/bin/stasis
 
 # Or install to user directory
-install -Dm755 target/release/stasis ~/.local/bin/stasis
-```
-
 install -Dm755 target/release/stasis ~/.local/bin/stasis
 ```
 
