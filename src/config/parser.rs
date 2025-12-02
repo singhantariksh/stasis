@@ -29,6 +29,11 @@ fn is_special_key(key: &str) -> bool {
             | "inhibit_apps" | "inhibit-apps"
             | "debounce_seconds" | "debounce-seconds"
             | "notify_on_unpause" | "notify-on-unpause"
+            | "notify_before_action" | "notify-before-action"
+            | "notify_seconds_before" | "notify-seconds-before"
+            | "lid_close_action" | "lid-close-action"
+            | "lid_open_action" | "lid-open-action"
+            | "media_blacklist" | "media-blacklist"
     )
 }
 
@@ -104,58 +109,65 @@ fn collect_actions(config: &RuneConfig, path: &str) -> Result<Vec<IdleActionBloc
     Ok(actions)
 }
 
-// --- Helper to merge configs by loading the last one that exists ---
+/// Load configuration with fallback chain:
+/// 1. Internal defaults (embedded from examples/)
+/// 2. Shipped defaults (/usr/share/stasis/stasis.rune)
+/// 3. System config (/etc/stasis/stasis.rune)
+/// 4. User config (~/.config/stasis/stasis.rune) - highest priority
+///
+/// Uses the new from_file_with_fallback API for cleaner loading
 fn load_merged_config() -> Result<RuneConfig> {
-    let mut config: Option<RuneConfig> = None;
-    let mut found_any = false;
-
-    // 1. Internal defaults (embedded from examples/)
-    // Note: This will be compiled into the binary
+    // 1. Try internal defaults first
     let internal_default = include_str!("../../examples/stasis.rune");
-    if let Ok(internal) = RuneConfig::from_str(internal_default) {
-        config = Some(internal);
-        found_any = true;
-    }
+    let mut config = RuneConfig::from_str(internal_default)
+        .wrap_err("failed to parse internal default config")?;
 
-    // 2. Shipped defaults (/usr/share/stasis/stasis.rune)
+    // 2. Try to load from filesystem with fallback chain
+    // Priority: user > system > shared
+    let user_path = dirs::home_dir()
+        .map(|mut p| {
+            p.push(".config/stasis/stasis.rune");
+            p
+        });
+    
+    let system_path = PathBuf::from("/etc/stasis/stasis.rune");
     let share_path = PathBuf::from("/usr/share/stasis/stasis.rune");
-    if share_path.exists() {
-        if let Ok(shared) = RuneConfig::from_file(&share_path) {
-            config = Some(shared);
-            found_any = true;
-        }
-    }
 
-    // 3. System config (/etc/stasis/stasis.rune)
-    let sys_path = PathBuf::from("/etc/stasis/stasis.rune");
-    if sys_path.exists() {
-        if let Ok(system) = RuneConfig::from_file(&sys_path) {
-            config = Some(system);
-            found_any = true;
-        }
-    }
-
-    // 4. User config (~/.config/stasis/stasis.rune) - highest priority
-    if let Some(mut user_path) = dirs::home_dir() {
-        user_path.push(".config/stasis/stasis.rune");
+    // Try user config first, with system as fallback
+    if let Some(user_path) = user_path {
         if user_path.exists() {
-            if let Ok(user) = RuneConfig::from_file(&user_path) {
-                config = Some(user);
-                found_any = true;
-            }
+            // User config exists, use it (may have imports)
+            config = RuneConfig::from_file(&user_path)
+                .wrap_err_with(|| format!("failed to load user config from {}", user_path.display()))?;
+            log_message(&format!("Loaded config from: {}", user_path.display()));
+            return Ok(config);
         }
     }
 
-    if !found_any {
-        return Err(eyre!("no valid configuration found in any location"));
+    // No user config, try system with share as fallback
+    if system_path.exists() {
+        config = RuneConfig::from_file(&system_path)
+            .wrap_err_with(|| format!("failed to load system config from {}", system_path.display()))?;
+        log_message(&format!("Loaded config from: {}", system_path.display()));
+        return Ok(config);
     }
 
-    config.ok_or_else(|| eyre!("failed to load any configuration"))
+    // Try share path as final fallback
+    if share_path.exists() {
+        config = RuneConfig::from_file(&share_path)
+            .wrap_err_with(|| format!("failed to load shared config from {}", share_path.display()))?;
+        log_message(&format!("Loaded config from: {}", share_path.display()));
+        return Ok(config);
+    }
+
+    // If no filesystem configs exist, use internal defaults
+    log_message("Using internal default configuration");
+    Ok(config)
 }
 
-// --- main loader ---
+/// Main configuration loader
 pub fn load_config() -> Result<StasisConfig> {
-    let config = load_merged_config().wrap_err("failed to load layered configuration")?;
+    let config = load_merged_config().wrap_err("failed to load configuration")?;
 
     let pre_suspend_command = config
         .get::<String>("stasis.pre_suspend_command")
@@ -172,22 +184,17 @@ pub fn load_config() -> Result<StasisConfig> {
         .or_else(|_| config.get::<bool>("stasis.ignore-remote-media"))
         .unwrap_or(true);
 
+    // Use Vec<String> conversion directly
     let media_blacklist: Vec<String> = config
-        .get_value("stasis.media_blacklist")
-        .or_else(|_| config.get_value("stasis.media-blacklist"))
-        .ok()
-        .and_then(|v| match v {
-            Value::Array(arr) => Some(
-                arr.iter()
-                    .filter_map(|v| match v {
-                        Value::String(s) => Some(s.to_lowercase()),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-            _ => None,
-        })
+        .get("stasis.media_blacklist")
+        .or_else(|_| config.get("stasis.media-blacklist"))
         .unwrap_or_default();
+    
+    // Convert to lowercase after extraction
+    let media_blacklist: Vec<String> = media_blacklist
+        .into_iter()
+        .map(|s| s.to_lowercase())
+        .collect();
 
     let respect_wayland_inhibitors = config
         .get::<bool>("stasis.respect_wayland_inhibitors")
@@ -227,7 +234,6 @@ pub fn load_config() -> Result<StasisConfig> {
         .or_else(|_| config.get::<u8>("stasis.debounce-seconds"))
         .unwrap_or(0u8);
 
-
     let notify_before_action = config
         .get::<bool>("stasis.notify_before_action")
         .or_else(|_| config.get::<bool>("stasis.notify-before-action"))
@@ -238,6 +244,7 @@ pub fn load_config() -> Result<StasisConfig> {
         .or_else(|_| config.get::<u64>("stasis.notify-seconds-before"))
         .unwrap_or(0);
 
+    // Use Vec conversion with custom pattern parsing
     let inhibit_apps: Vec<AppInhibitPattern> = config
         .get_value("stasis.inhibit_apps")
         .or_else(|_| config.get_value("stasis.inhibit-apps"))
@@ -260,6 +267,7 @@ pub fn load_config() -> Result<StasisConfig> {
     let actions = match chassis {
         ChassisKind::Laptop => {
             let mut all = Vec::new();
+            
             // Collect with "ac." prefix
             let ac_actions = collect_actions(&config, "stasis.on_ac")?
                 .into_iter()
@@ -279,7 +287,7 @@ pub fn load_config() -> Result<StasisConfig> {
             all.extend(battery_actions);
             
             all
-        }   
+        }
         ChassisKind::Desktop => collect_actions(&config, "stasis")?,
     };
 
@@ -329,7 +337,7 @@ pub fn load_config() -> Result<StasisConfig> {
         actions,
         pre_suspend_command,
         monitor_media,
-        media_blacklist, 
+        media_blacklist,
         ignore_remote_media,
         respect_wayland_inhibitors,
         inhibit_apps,

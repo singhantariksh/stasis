@@ -387,6 +387,8 @@ pub async fn decr_active_inhibitor(mgr: &mut Manager) {
     if now == 0 {
         if !mgr.state.manually_paused {
             mgr.state.paused = false;
+            mgr.reset().await;
+
             log_message(&format!(
                 "Inhibitor removed (count: {} → {}): no more inhibitors → idle timers resumed",
                 prev, now
