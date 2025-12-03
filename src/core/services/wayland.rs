@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::core::manager::Manager;
-use crate::log::{log_error_message, log_message_wayland};
+use crate::log::{log_error_message, log_wayland_message};
 
 use tokio::sync::Notify;
 use tokio::time::sleep;
@@ -67,16 +67,16 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandIdleData {
                 "ext_idle_notifier_v1" => {
                     state.idle_notifier =
                         Some(registry.bind::<ExtIdleNotifierV1, _, _>(name, 1, qh, ()));
-                    log_message_wayland("Binding ext_idle_notifier_v1");
+                    log_wayland_message("Binding ext_idle_notifier_v1");
                 }
                 "wl_seat" => {
                     state.seat = Some(registry.bind::<WlSeat, _, _>(name, 1, qh, ()));
-                    log_message_wayland("Binding wl_seat");
+                    log_wayland_message("Binding wl_seat");
                 }
                 "zwp_idle_inhibit_manager_v1" => {
                     state.inhibit_manager =
                         Some(registry.bind::<ZwpIdleInhibitManagerV1, _, _>(name, 1, qh, ()));
-                    log_message_wayland("Binding zwp_idle_inhibit_manager_v1");
+                    log_wayland_message("Binding zwp_idle_inhibit_manager_v1");
                 }
                 _ => {}
             }
@@ -109,7 +109,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleData {
 
         tokio::spawn(async move {
             if inhibited {
-                log_message_wayland("Idle inhibited; skipping idle trigger");
+                log_wayland_message("Idle inhibited; skipping idle trigger");
                 return;
             }
 
@@ -117,11 +117,11 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleData {
 
             match event {
                 IdleEvent::Idled => {
-                    log_message_wayland("Compositor detected idle");
+                    log_wayland_message("Compositor detected idle");
                     mgr.check_timeouts().await;
                 }
                 IdleEvent::Resumed => {
-                    log_message_wayland("Compositor detected activity");
+                    log_wayland_message("Compositor detected activity");
                     mgr.reset().await;
                 }
                 _ => {}
@@ -141,7 +141,7 @@ impl Dispatch<ZwpIdleInhibitorV1, ()> for WaylandIdleData {
         _: &QueueHandle<Self>,
     ) {
         state.active_inhibitors += 1;
-        log_message_wayland(&format!("Inhibitor created, count={}", state.active_inhibitors));
+        log_wayland_message(&format!("Inhibitor created, count={}", state.active_inhibitors));
     }
 }
 
@@ -156,7 +156,7 @@ impl Dispatch<ZwpIdleInhibitManagerV1, ()> for WaylandIdleData {
     ) {
         if state.active_inhibitors > 0 {
             state.active_inhibitors -= 1;
-            log_message_wayland(&format!("Inhibitor removed, count={}", state.active_inhibitors));
+            log_wayland_message(&format!("Inhibitor removed, count={}", state.active_inhibitors));
         }
     }
 }
@@ -177,7 +177,7 @@ pub async fn setup(
     manager: Arc<tokio::sync::Mutex<Manager>>,
     respect_inhibitors: bool,
 ) -> Result<Arc<tokio::sync::Mutex<WaylandIdleData>>> {
-    log_message_wayland(&format!(
+    log_wayland_message(&format!(
         "Setting up Wayland idle detection (respect_inhibitors={})",
         respect_inhibitors
     ));
@@ -201,7 +201,7 @@ pub async fn setup(
         let timeout_ms = 5_000; // placeholder, can be dynamic
         let notification = notifier.get_idle_notification(timeout_ms, seat, &qh, ());
         app_data.notification = Some(notification);
-        log_message_wayland("Wayland idle detection active");
+        log_wayland_message("Wayland idle detection active");
     }
 
     // Wrap in Arc<Mutex>
@@ -216,7 +216,7 @@ pub async fn setup(
     tokio::spawn({
         let app_data = Arc::clone(&app_data);
         async move {
-            log_message_wayland("Wayland event loop started");
+            log_wayland_message("Wayland event loop started");
             loop {
                 tokio::select! {
                     _ = shutdown_flag.notified() => {
@@ -231,7 +231,7 @@ pub async fn setup(
                 }
             }
 
-            log_message_wayland("Wayland event loop shutting down...");
+            log_wayland_message("Wayland event loop shutting down...");
         }
     });
 

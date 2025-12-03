@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use tokio::process::Command;
 
-use crate::log::{log_error_message, log_message};
+use crate::log::{log_error_message, log_warning_message, log_message, log_debug_message};
 
 use crate::{
     config::model::IdleActionBlock, 
@@ -22,7 +22,7 @@ struct BrightnessState {
 pub async fn capture_brightness(state: &mut ManagerState) -> Result<(), std::io::Error> {
     // Try sysfs method first
     if let Some(sys_brightness) = capture_sysfs_brightness() {
-        log_message(&format!("Captured brightness via sysfs: {}/{} on device '{}'", 
+        log_debug_message(&format!("Captured brightness via sysfs: {}/{} on device '{}'", 
             sys_brightness.value, sys_brightness.max_brightness, sys_brightness.device));
 
         // Store the full u32 value - don't truncate!
@@ -33,7 +33,7 @@ pub async fn capture_brightness(state: &mut ManagerState) -> Result<(), std::io:
     }
 
     // Fallback to brightnessctl
-    log_message("Falling back to brightnessctl for brightness capture");
+    log_warning_message("Falling back to brightnessctl for brightness capture");
     match Command::new("brightnessctl").arg("get").output().await {
         Ok(out) if out.status.success() => {
             let val = String::from_utf8_lossy(&out.stdout)
@@ -41,13 +41,13 @@ pub async fn capture_brightness(state: &mut ManagerState) -> Result<(), std::io:
                 .parse::<u32>()
                 .unwrap_or(0);
             state.previous_brightness = Some(val);
-            log_message(&format!("Captured brightness via brightnessctl: {}", val));
+            log_debug_message(&format!("Captured brightness via brightnessctl: {}", val));
         }
         Ok(out) => {
-            log_error_message(&format!("brightnessctl get failed: {:?}", out.status));
+            log_warning_message(&format!("brightnessctl get failed: {:?}", out.status));
         }
         Err(e) => {
-            log_error_message(&format!("Failed to execute brightnessctl: {}", e));
+            log_warning_message(&format!("Failed to execute brightnessctl: {}", e));
         }
     }
 
@@ -56,12 +56,12 @@ pub async fn capture_brightness(state: &mut ManagerState) -> Result<(), std::io:
 
 pub async fn restore_brightness(state: &mut ManagerState) -> Result<(), std::io::Error> {
     if let Some(level) = state.previous_brightness {
-        log_message(&format!("Attempting to restore brightness to {}", level));
+        log_debug_message(&format!("Attempting to restore brightness to {}", level));
 
         // Try sysfs restore first if we have device info
         if let (Some(device), Some(_max)) = (&state.brightness_device, state.max_brightness) {
             if restore_sysfs_brightness_to_device(device, level).is_ok() {
-                log_message("Brightness restored via sysfs");
+                log_debug_message("Brightness restored via sysfs");
                 state.previous_brightness = None;
                 state.max_brightness = None;
                 state.brightness_device = None;
@@ -71,9 +71,9 @@ pub async fn restore_brightness(state: &mut ManagerState) -> Result<(), std::io:
 
         // Fallback to generic sysfs restore
         if restore_sysfs_brightness(level).is_ok() {
-            log_message("Brightness restored via sysfs (generic)");
+            log_debug_message("Brightness restored via sysfs (generic)");
         } else {
-            log_message("Falling back to brightnessctl for brightness restore");
+            log_warning_message("Falling back to brightnessctl for brightness restore");
             if let Err(e) = Command::new("brightnessctl")
                 .arg("set")
                 .arg(level.to_string())
@@ -172,16 +172,16 @@ pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
     // The LoginctlLock event will handle setting up the lock state
     if matches!(action.kind, crate::config::model::IdleAction::LockScreen) {
         if action.command.contains("loginctl lock-session") {
-            log_message("Lock uses loginctl lock-session, triggering it (state will be managed by loginctl event)");
+            log_debug_message("Lock uses loginctl lock-session, triggering it (state will be managed by loginctl event)");
             // Run the loginctl command to trigger the Lock signal
             if let Err(e) = run_command_detached(&action.command).await {
-                log_message(&format!("Failed to run loginctl lock-session: {}", e));
+                log_error_message(&format!("Failed to run loginctl lock-session: {}", e));
             }
             return;
         }
         
         if mgr.state.lock_state.is_locked {
-            log_message("Lock screen action skipped: already locked");
+            log_debug_message("Lock screen action skipped: already locked");
             return;
         }
     }
@@ -194,7 +194,7 @@ pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
     if matches!(action.kind, crate::config::model::IdleAction::LockScreen) {
         mgr.state.lock_state.is_locked = true;
         mgr.state.lock_notify.notify_one();
-        log_message("Lock screen action triggered, notifying lock watcher");
+        log_debug_message("Lock screen action triggered, notifying lock watcher");
     }
 
     // Handle pre-suspend for Suspend actions
@@ -204,7 +204,7 @@ pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
                 log_message(&format!("Running pre-suspend command: {}", cmd));
                 let should_wait = match run_command_detached(cmd).await {
                     Ok(pid) => {
-                        log_message(&format!("Pre-suspend command started with PID {}", pid.pid));
+                        log_debug_message(&format!("Pre-suspend command started with PID {}", pid.pid));
                         true
                     }
                     Err(e) => {
@@ -245,11 +245,11 @@ pub async fn run_command_for_action(
 
         if is_loginctl {
             // Case 1: loginctl path
-            log_message("Lock triggered via loginctl — running loginctl but not tracking it");
+            log_debug_message("Lock triggered via loginctl — running loginctl but not tracking it");
 
             // Fire loginctl (do not track)
             if let Err(e) = run_command_detached(&cmd).await {
-                log_message(&format!("Failed to run loginctl: {}", e));
+                log_error_message(&format!("Failed to run loginctl: {}", e));
             }
 
             // Now run and track the real lock-command
@@ -261,18 +261,18 @@ pub async fn run_command_for_action(
                         mgr.state.lock_state.process_info = Some(process_info.clone());
                         mgr.state.lock_state.is_locked = true;
 
-                        log_message(&format!(
+                        log_debug_message(&format!(
                             "Lock started: PID={} PGID={}",
                             process_info.pid, process_info.pgid
                         ));
                     }
-                    Err(e) => log_message(&format!(
+                    Err(e) => log_error_message(&format!(
                         "Failed to run lock-command '{}': {}",
                         lock_cmd, e
                     )),
                 }
             } else {
-                log_message("WARNING: loginctl used but no lock-command configured.");
+                log_warning_message("loginctl used but no lock-command configured.");
                 mgr.state.lock_state.is_locked = true;
             }
 
@@ -286,7 +286,7 @@ pub async fn run_command_for_action(
             Ok(mut process_info) => {
                 // lock-command = process name override, not a command to run
                 if let Some(ref lock_cmd) = action.lock_command {
-                    log_message(&format!(
+                    log_debug_message(&format!(
                         "Using lock-command as process name override: {}",
                         lock_cmd
                     ));
@@ -296,7 +296,7 @@ pub async fn run_command_for_action(
                 mgr.state.lock_state.process_info = Some(process_info.clone());
                 mgr.state.lock_state.is_locked = true;
 
-                log_message(&format!(
+                log_debug_message(&format!(
                     "Lock started: PID={} PGID={} tracking={:?}",
                     process_info.pid,
                     process_info.pgid,
@@ -304,7 +304,7 @@ pub async fn run_command_for_action(
                 ));
             }
 
-            Err(e) => log_message(&format!("Failed to run '{}' => {}", cmd, e)),
+            Err(e) => log_error_message(&format!("Failed to run '{}' => {}", cmd, e)),
         }
 
         return;
@@ -313,7 +313,7 @@ pub async fn run_command_for_action(
     // NON-lock case
     let spawned = tokio::spawn(async move {
         if let Err(e) = run_command_silent(&cmd).await {
-            log_message(&format!("Failed to run command '{}': {}", cmd, e));
+            log_error_message(&format!("Failed to run command '{}': {}", cmd, e));
         }
     });
     mgr.spawned_tasks.push(spawned);
@@ -352,7 +352,7 @@ pub async fn trigger_all_idle_actions(mgr: &mut Manager) {
     };
 
     if actions_to_trigger.is_empty() {
-        log_message("No actions defined to trigger");
+        log_warning_message("No actions defined to trigger");
         return;
     }
 

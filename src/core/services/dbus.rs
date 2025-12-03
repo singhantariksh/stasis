@@ -5,7 +5,7 @@ use zbus::{Connection, fdo::Result as ZbusResult, Proxy, MatchRule};
 use zvariant::Value;
 use crate::core::events::handlers::{handle_event, Event};
 use crate::core::manager::Manager;
-use crate::log::{log_error_message, log_message, log_message_dbus};
+use crate::log::{log_error_message, log_message, log_dbus_message};
 
 pub async fn listen_for_suspend_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusResult<()> {
     let connection = Connection::system().await?;
@@ -17,7 +17,7 @@ pub async fn listen_for_suspend_events(idle_manager: Arc<Mutex<Manager>>) -> Zbu
     ).await?;
     
     let mut stream = proxy.receive_signal("PrepareForSleep").await?;
-    log_message_dbus("Listening for D-Bus suspend events...");
+    log_dbus_message("Listening for D-Bus suspend events...");
     
     while let Some(signal) = stream.next().await {
         let going_to_sleep: bool = match signal.body().deserialize() {
@@ -41,7 +41,7 @@ pub async fn listen_for_suspend_events(idle_manager: Arc<Mutex<Manager>>) -> Zbu
 
 pub async fn listen_for_lid_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusResult<()> {
     let connection = Connection::system().await?;
-    log_message_dbus("Listening for D-Bus lid events via UPower...");
+    log_dbus_message("Listening for D-Bus lid events via UPower...");
     
     // Create a match rule for PropertiesChanged signals from UPower
     let rule = MatchRule::builder()
@@ -102,12 +102,12 @@ pub async fn listen_for_lid_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusRes
 
 pub async fn listen_for_lock_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusResult<()> {
     let connection = Connection::system().await?;
-    log_message_dbus("Listening for D-Bus lock/unlock events...");
+    log_dbus_message("Listening for D-Bus lock/unlock events...");
     
     // Get the session path for the current session
     let session_path = get_current_session_path(&connection).await?;
     
-    log_message_dbus(&format!("Monitoring session: {}", session_path.as_str()));
+    log_dbus_message(&format!("Monitoring session: {}", session_path.as_str()));
     
     let proxy = Proxy::new(
         &connection,
@@ -154,11 +154,11 @@ async fn get_current_session_path(connection: &Connection) -> ZbusResult<zvarian
     
     // Method 1: Try XDG_SESSION_ID environment variable (most reliable for graphical sessions)
     if let Ok(session_id) = std::env::var("XDG_SESSION_ID") {
-        log_message_dbus(&format!("Attempting to use XDG_SESSION_ID: {}", session_id));
+        log_dbus_message(&format!("Attempting to use XDG_SESSION_ID: {}", session_id));
         let result: Result<zvariant::OwnedObjectPath, zbus::Error> = proxy.call("GetSession", &(session_id.as_str(),)).await;
         match result {
             Ok(path) => {
-                log_message_dbus(&format!("Using session from XDG_SESSION_ID: {}", path.as_str()));
+                log_dbus_message(&format!("Using session from XDG_SESSION_ID: {}", path.as_str()));
                 return Ok(path);
             }
             Err(e) => {

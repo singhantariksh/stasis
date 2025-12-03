@@ -12,7 +12,7 @@ use std::{
 use input::LibinputInterface;
 use tokio::sync::Mutex;
 use futures::FutureExt; // for now_or_never()
-use crate::{core::manager::Manager, log::log_message};
+use crate::{core::manager::Manager, log::{log_debug_message, log_error_message, log_message}};
 
 struct InputDetection;
 
@@ -49,7 +49,7 @@ pub fn spawn_input_task(manager: Arc<Mutex<Manager>>) -> tokio::task::JoinHandle
                 tokio::select! {
                     maybe_event = rx.recv() => {
                         if maybe_event.is_none() {
-                            log_message("Input async handler channel closed");
+                            log_debug_message("Input async handler channel closed");
                             break;
                         }
 
@@ -73,7 +73,7 @@ pub fn spawn_input_task(manager: Arc<Mutex<Manager>>) -> tokio::task::JoinHandle
 
             let mut libinput = input::Libinput::new_with_udev(InputDetection);
             if let Err(e) = libinput.udev_assign_seat("seat0") {
-                eprintln!("Failed to assign seat: {:?}", e);
+                log_error_message(&format!("Failed to assign seat: {:?}", e));
                 return;
             }
 

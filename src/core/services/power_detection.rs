@@ -2,7 +2,7 @@ use std::{fs, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 use crate::core::manager::Manager;
-use crate::log::log_message_debug;
+use crate::log::log_debug_message;
 use crate::core::events::handlers::{handle_event, Event};
 
 /// Detect initial AC/Battery state.
@@ -10,7 +10,7 @@ use crate::core::events::handlers::{handle_event, Event};
 pub async fn detect_initial_power_state(manager: &Arc<Mutex<Manager>>) -> bool {
     let mgr = manager.lock().await;
     if !mgr.state.is_laptop() {
-        log_message_debug("Desktop detected, skipping power source check");
+        log_debug_message("Desktop detected, skipping power source check");
         return true;
     }
     drop(mgr);
@@ -23,7 +23,7 @@ pub async fn detect_initial_power_state(manager: &Arc<Mutex<Manager>>) -> bool {
     }
 
     let current_block = manager.lock().await.state.current_block.clone();
-    log_message_debug(&format!(
+    log_debug_message(&format!(
         "Initial power detection: {} (active block: {})",
         if on_ac { "AC" } else { "Battery" },
         current_block
@@ -85,7 +85,7 @@ pub async fn spawn_power_source_monitor(manager: Arc<Mutex<Manager>>) {
 
         if on_ac != last_on_ac {
             last_on_ac = on_ac;
-            log_message_debug(&format!(
+            log_debug_message(&format!(
                 "Power source changed: {}",
                 if on_ac { "AC" } else { "Battery" }
             ));

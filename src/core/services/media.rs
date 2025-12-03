@@ -27,10 +27,10 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
 
     // If Firefox extension exists, spawn the browser media monitor
     if skip_firefox {
-        crate::log::log_message_media_bridge("Media Bridge plugin detected, spawning browser media monitor");
+        crate::log::log_media_bridge_message("Media Bridge plugin detected, spawning browser media monitor");
         crate::core::services::browser_media::spawn_browser_media_monitor(Arc::clone(&manager)).await;
     } else {
-        crate::log::log_message_media_bridge("Browser MPRIS bridge not found, using standard MPRIS detection");
+        crate::log::log_media_bridge_message("Browser MPRIS bridge not found, using standard MPRIS detection");
     }
 
     let manager_clone = Arc::clone(&manager);
@@ -43,7 +43,7 @@ pub async fn spawn_media_monitor_dbus(manager: Arc<tokio::sync::Mutex<Manager>>)
             let is_detected = firefox_extension_exists();
             
             if is_detected && !was_detected {
-                crate::log::log_message_media_bridge("Browser MPRIS bridge now detected, transitioning to browser media monitor");
+                crate::log::log_media_bridge_message("Browser MPRIS bridge now detected, transitioning to browser media monitor");
                 
                 // HANDOFF: MPRIS → Browser Extension
                 {
