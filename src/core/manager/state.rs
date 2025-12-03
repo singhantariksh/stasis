@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::{Duration, Instant}};
 
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 use crate::{
     config::model::{IdleActionBlock, StasisConfig}, 
@@ -38,6 +39,8 @@ pub struct ManagerState {
     pub media_bridge_active: bool,
     pub notify: Arc<Notify>,
     pub paused: bool,
+    pub pending_notification_task: Option<JoinHandle<()>>,
+    pub notification_sent_for_action: Option<usize>, // Track which action index had notification sent
     pub previous_brightness: Option<u32>,
     pub pre_suspend_command: Option<String>,
     pub resume_queue: Vec<IdleActionBlock>,
@@ -79,6 +82,8 @@ impl Default for ManagerState {
             notify: Arc::new(Notify::new()),
             lock_notify: Arc::new(Notify::new()),
             paused: false,
+            pending_notification_task: None,
+            notification_sent_for_action: None,
             previous_brightness: None,
             pre_suspend_command: None,
             resume_queue: Vec::new(),
@@ -155,6 +160,8 @@ impl ManagerState {
             notify: Arc::new(Notify::new()),
             lock_notify: Arc::new(Notify::new()),
             paused: false,
+            pending_notification_task: None,
+            notification_sent_for_action: None,
             previous_brightness: None,
             pre_suspend_command: cfg.pre_suspend_command.clone(),
             resume_queue: Vec::new(),
@@ -218,6 +225,11 @@ impl ManagerState {
             // Reset state when switching blocks
             self.action_index = 0;
             self.instants_triggered = false;
+            
+            // Cancel any pending notification when switching blocks
+            self.pending_notification_task = None;
+            self.notification_sent_for_action = None;
+            
             self.notify.notify_one();
         }
     }
@@ -255,6 +267,10 @@ impl ManagerState {
         self.active_flags = ActiveFlags::default();
         self.previous_brightness = None;
         self.pre_suspend_command = cfg.pre_suspend_command.clone();
+
+        // Cancel any pending notification
+        self.pending_notification_task = None;
+        self.notification_sent_for_action = None;
 
         // Split actions into blocks
         let default_actions: Vec<_> = cfg

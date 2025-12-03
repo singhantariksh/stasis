@@ -14,7 +14,7 @@ pub use self::state::ManagerState;
 use crate::{
     config::model::{IdleAction, StasisConfig}, 
     core::manager::{
-        actions::{is_process_running, run_command_detached},
+        actions::{is_process_running, run_command_detached, run_command_silent},
         helpers::{restore_brightness, run_action},
     }, 
     log::{log_message, log_message_debug}
@@ -82,6 +82,10 @@ impl Manager {
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.state.debounce = Some(now + debounce);
         self.state.last_activity = now;
+
+        // Cancel any pending notifications
+        self.state.pending_notification_task = None;
+        self.state.notification_sent_for_action = None;
 
         // Store values we need before borrowing
         let is_locked = self.state.lock_state.is_locked;
@@ -180,6 +184,13 @@ impl Manager {
         let last_activity = self.state.last_activity;
         let debounce = self.state.debounce;
 
+        // Get notification settings from config early
+        let (notify_before_enabled, notify_seconds) = if let Some(cfg) = &self.state.cfg {
+            (cfg.notify_before_action, cfg.notify_seconds_before)
+        } else {
+            (false, 0)
+        };
+
         // Get reference to the right actions Vec using helper method
         let actions = self.state.get_active_actions_mut();
 
@@ -194,9 +205,9 @@ impl Manager {
             return;
         }
 
-        // Calculate earliest allowed fire time
+        // Calculate the ORIGINAL fire time (without notification delay)
         let timeout = Duration::from_secs(actions[index].timeout as u64);
-        let next_fire = if let Some(last_trig) = actions[index].last_triggered {
+        let original_fire_time = if let Some(last_trig) = actions[index].last_triggered {
             // Already triggered: timeout from when it last fired
             last_trig + timeout
         } else if index > 0 {
@@ -213,9 +224,71 @@ impl Manager {
             base + timeout
         };
 
-        if now < next_fire {
-            // Not ready yet
-            return;
+        // Extract notification data before spawning task
+        let notification_opt = actions[index].notification.as_ref().map(|n| (n.clone(), actions[index].name.clone()));
+
+        // Check if we should schedule notification
+        // Timeline: [idle] -> [debounce] -> [timeout] -> [NOTIFY at original_fire_time] -> [wait notify_seconds] -> [ACTION]
+        if notify_before_enabled && notify_seconds > 0 {
+            if let Some((notification_msg, action_name)) = notification_opt {
+                let notify_duration = Duration::from_secs(notify_seconds as u64);
+                let already_notified = self.state.notification_sent_for_action == Some(index);
+                
+                // Notification fires at the ORIGINAL fire time
+                // Action fires AFTER the notification delay
+                let actual_action_time = original_fire_time + notify_duration;
+                
+                // If we've reached the original fire time but haven't notified yet
+                if now >= original_fire_time && !already_notified {
+                    let action_time = actual_action_time;
+                    let notify = Arc::clone(&self.state.notify);
+                    
+                    log_message(&format!(
+                        "Notification time reached for action '{}': sending '{}' (action will fire in {}s)",
+                        action_name, notification_msg, notify_seconds
+                    ));
+                    
+                    // Mark that we've sent notification for this action
+                    self.state.notification_sent_for_action = Some(index);
+                    
+                    // Spawn notification task
+                    let task = tokio::spawn(async move {
+                        // Send notification immediately
+                        let notify_cmd = format!("notify-send -a Stasis '{}'", notification_msg);
+                        if let Err(e) = run_command_silent(&notify_cmd).await {
+                            log_message(&format!("Failed to send notification: {}", e));
+                        } else {
+                            log_message(&format!("Notification sent: {}", notification_msg));
+                        }
+                        
+                        // Wait for the notification delay period
+                        let wait_duration = action_time.checked_duration_since(Instant::now())
+                            .unwrap_or(Duration::ZERO);
+                        if !wait_duration.is_zero() {
+                            tokio::time::sleep(wait_duration).await;
+                        }
+                        
+                        // Wake the idle task to fire the action
+                        notify.notify_one();
+                    });
+                    
+                    self.state.pending_notification_task = Some(task);
+                    return; // Don't fire action yet
+                }
+                
+                // If notification was sent, check if it's time to fire the action
+                if already_notified && now >= actual_action_time {
+                    // Fall through to fire the action
+                } else {
+                    // Not ready yet
+                    return;
+                }
+            }
+        } else {
+            // No notification - check original fire time
+            if now < original_fire_time {
+                return;
+            }
         }
 
         // Action is ready: clone and mark triggered
@@ -225,6 +298,10 @@ impl Manager {
             actions[index].last_triggered = Some(now);
             (action_clone, actions.len())
         }; // Borrow ends here
+
+        // Clear notification task since action is firing
+        self.state.pending_notification_task = None;
+        self.state.notification_sent_for_action = None;
 
         // Advance index
         self.state.action_index += 1;
@@ -240,7 +317,7 @@ impl Manager {
             self.state.resume_queue.push(action_clone.clone());
         }
 
-        // Fire the action
+        // Fire the action (without blocking notification)
         run_action(self, &action_clone).await;
     }
 
@@ -275,6 +352,13 @@ impl Manager {
             return None;
         }
 
+        // Get notification settings from config
+        let (notify_before_enabled, notify_seconds) = if let Some(cfg) = &self.state.cfg {
+            (cfg.notify_before_action, cfg.notify_seconds_before)
+        } else {
+            (false, 0)
+        };
+
         let mut min_time: Option<Instant> = None;
 
         for (i, action) in actions.iter().enumerate() {
@@ -283,9 +367,9 @@ impl Manager {
                 continue;
             }
 
-            // Calculate next fire time for this action
+            // Calculate the ORIGINAL fire time (where notification would fire)
             let timeout = Duration::from_secs(action.timeout as u64);
-            let next_time = if let Some(last_trig) = action.last_triggered {
+            let original_fire_time = if let Some(last_trig) = action.last_triggered {
                 // Already triggered: timeout from when it last fired
                 last_trig + timeout
             } else if i > 0 {
@@ -300,6 +384,20 @@ impl Manager {
                 // First action: use debounce + timeout
                 let base = self.state.debounce.unwrap_or(self.state.last_activity);
                 base + timeout
+            };
+
+            // Determine when we need to wake up
+            let next_time = if notify_before_enabled && action.notification.is_some() {
+                // If notification not yet sent for this action, wake at original fire time
+                // If already sent, wake at actual action time (original + notify delay)
+                if self.state.notification_sent_for_action == Some(i) {
+                    let notify_duration = Duration::from_secs(notify_seconds as u64);
+                    original_fire_time + notify_duration
+                } else {
+                    original_fire_time
+                }
+            } else {
+                original_fire_time
             };
 
             min_time = Some(match min_time {
@@ -393,6 +491,11 @@ impl Manager {
 
         if let Some(handle) = self.input_task_handle.take() {
             handle.abort();
+        }
+
+        // Cancel pending notification
+        if let Some(task) = self.state.pending_notification_task.take() {
+            task.abort();
         }
 
         for handle in self.spawned_tasks.drain(..) {
