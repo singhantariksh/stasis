@@ -30,8 +30,6 @@ pub fn get_manual_inhibit(state: &mut ManagerState) -> bool {
     state.manually_paused
 }
 
-
-
 pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
     log_message(&format!(
         "Action triggered: name=\"{}\" kind={:?} timeout={} command=\"{}\"",

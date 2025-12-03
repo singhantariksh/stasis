@@ -74,7 +74,6 @@ fn log(level: LogLevel, prefix: &str, message: &str) {
     }
 }
 
-
 /// Get log file path
 pub fn log_path() -> PathBuf {
     let mut path = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("/tmp"));

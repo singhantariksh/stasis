@@ -33,12 +33,12 @@ async fn main() -> Result<()> {
         exit(1);
     }
 
-    // --- Handle subcommands via socket ---
+    // Handle subcommands via socket
     if let Some(cmd) = &args.command {
         return client::handle_client_command(cmd).await;
     }
     
-    // --- Single Instance enforcement ---
+    // Single Instance enforcement
     let just_help_or_version = std::env::args().any(|a| matches!(a.as_str(), "-V" | "--version" | "-h" | "--help" | "help"));
     if UnixStream::connect(SOCKET_PATH).await.is_ok() {
         if !just_help_or_version {
@@ -53,11 +53,11 @@ async fn main() -> Result<()> {
         eyre::eyre!("Failed to bind control socket. Another instance may be running.")
     })?;
 
-    // --- Ensure user config exists ---
+    // Ensure user config exists
     if let Err(e) = config::bootstrap::ensure_user_config_exists() {
         eprintln!("Could not initialize config: {}", e);
     }
     
-    // --- Run daemon ---
+    // Run daemon
     daemon::run_daemon(listener, args.verbose).await
 }
