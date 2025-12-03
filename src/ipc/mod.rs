@@ -10,7 +10,11 @@ use tokio::{
 
 use crate::{
     config, core::{
-        manager::{helpers::{get_manual_inhibit, set_manual_inhibit, trigger_all_idle_actions}, Manager}, 
+        manager::{
+            helpers::{get_manual_inhibit, trigger_all_idle_actions}, 
+            inhibitors::set_manual_inhibit,
+            Manager
+        }, 
         services::app_inhibit::AppInhibitor,
         utils::format_duration,
     }, 

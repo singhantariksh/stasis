@@ -1,6 +1,8 @@
 pub mod actions;
+pub mod brightness;
 pub mod helpers;
 pub mod idle_loops;
+pub mod inhibitors;
 pub mod state;
 pub mod tasks;
 
@@ -15,9 +17,11 @@ use crate::{
     config::model::{IdleAction, StasisConfig}, 
     core::manager::{
         actions::{is_process_running, run_command_detached, run_command_silent},
-        helpers::{restore_brightness, run_action},
+        brightness::restore_brightness,
+        helpers::run_action,
+        inhibitors::{incr_active_inhibitor, decr_active_inhibitor},
     }, 
-    log::{log_message, log_debug_message}
+    log::{log_message, log_debug_message},
 };
 
 pub struct Manager {
@@ -468,10 +472,10 @@ impl Manager {
         // Only change state via the helpers so behaviour stays consistent:
         if playing && !self.state.media_playing {
             // call the same helper the monitor uses
-            crate::core::manager::helpers::incr_active_inhibitor(self).await;
+            incr_active_inhibitor(self).await;
             self.state.media_playing = true;
         } else if !playing && self.state.media_playing {
-            crate::core::manager::helpers::decr_active_inhibitor(self).await;
+            decr_active_inhibitor(self).await;
             self.state.media_playing = false;
         }
     }

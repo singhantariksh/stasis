@@ -7,10 +7,10 @@ use tokio::time::{interval, Duration};
 use serde_json::Value;
 
 use crate::core::manager::{
-    helpers::{incr_active_inhibitor, decr_active_inhibitor},
+    inhibitors::{incr_active_inhibitor, decr_active_inhibitor},
     Manager
 };
-use crate::log::{log_message, log_error_message};
+use crate::log::{log_debug_message, log_error_message, log_message, log_warning_message};
 
 const BRIDGE_SOCKET: &str = "/tmp/media_bridge.sock";
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -58,7 +58,7 @@ struct BrowserMediaState {
 
 /// Stop the browser monitor and wait for it to clean up
 pub async fn stop_browser_monitor(manager: Arc<Mutex<Manager>>) {
-    log_message("Stopping browser media monitor...");
+    log_debug_message("Stopping browser media monitor...");
     
     // Signal shutdown
     SHUTDOWN_SIGNAL.store(true, Ordering::SeqCst);
@@ -71,7 +71,7 @@ pub async fn stop_browser_monitor(manager: Arc<Mutex<Manager>>) {
         let mut mgr = manager.lock().await;
         let prev_tab_count = mgr.state.browser_playing_tab_count;
         if prev_tab_count > 0 {
-            log_message(&format!(
+            log_debug_message(&format!(
                 "Clearing {} browser tab inhibitors",
                 prev_tab_count
             ));
@@ -97,7 +97,7 @@ pub async fn stop_browser_monitor(manager: Arc<Mutex<Manager>>) {
 pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
     // Prevent multiple monitors from running
     if MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
-        log_message("Browser media monitor already running, skipping spawn");
+        log_warning_message("Browser media monitor already running, skipping spawn");
         return;
     }
 
@@ -129,7 +129,7 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
             match query_browser_status() {
                 Ok(state) => {
                     if !connected {
-                        log_message("Connected to MPRIS bridge");
+                        log_debug_message("Connected to MPRIS bridge");
                         connected = true;
                     }
                     
@@ -145,7 +145,7 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                         handle_browser_media_state(manager.clone(), &state).await;
                         
                         if state.playing {
-                            log_message(&format!(
+                            log_debug_message(&format!(
                                 "Browser media active: {}/{} tabs playing (IDs: {:?})",
                                 state.playing_tabs.len(),
                                 state.tab_count,
@@ -200,7 +200,7 @@ async fn handle_browser_media_state(
     let delta = new_tab_count as i32 - prev_tab_count as i32;
 
     if delta != 0 {
-        log_message(&format!(
+        log_debug_message(&format!(
             "Browser tab count change: {} → {} (delta: {})",
             prev_tab_count, new_tab_count, delta
         ));

@@ -128,22 +128,26 @@ pub fn log_message(message: &str) {
     log(LogLevel::Info, "Stasis", message);
 }
 
-pub fn log_message_debug(message: &str) {
-    log(LogLevel::Debug, "Stasis", message);
+pub fn log_debug_message(message: &str) {
+    log(LogLevel::Debug, "Debug", message);
+}
+
+pub fn log_warning_message(message: &str) {
+    log(LogLevel::Warn, "Warning", message);
 }
 
 pub fn log_error_message(message: &str) {
     log(LogLevel::Error, "Error", message);
 }
 
-pub fn log_message_media_bridge(message: &str) {
+pub fn log_media_bridge_message(message: &str) {
     log(LogLevel::Debug, "Media", message);
 }
 
-pub fn log_message_wayland(message: &str) {
+pub fn log_wayland_message(message: &str) {
     log(LogLevel::Debug, "Wayland", message);
 }
 
-pub fn log_message_dbus(message: &str) {
+pub fn log_dbus_message(message: &str) {
     log(LogLevel::Debug, "D-Bus", message);
 }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::{
     config::model::*, core::utils::{ChassisKind, detect_chassis}, 
-    log::log_message_debug
+    log::log_debug_message
 };
 
 fn parse_app_pattern(s: &str) -> Result<AppInhibitPattern> {
@@ -138,7 +138,7 @@ fn load_merged_config() -> Result<RuneConfig> {
             // User config exists, use it (may have imports)
             config = RuneConfig::from_file(&user_path)
                 .wrap_err_with(|| format!("failed to load user config from {}", user_path.display()))?;
-            log_message_debug(&format!("Loaded config from: {}", user_path.display()));
+            log_debug_message(&format!("Loaded config from: {}", user_path.display()));
             return Ok(config);
         }
     }
@@ -147,7 +147,7 @@ fn load_merged_config() -> Result<RuneConfig> {
     if system_path.exists() {
         config = RuneConfig::from_file(&system_path)
             .wrap_err_with(|| format!("failed to load system config from {}", system_path.display()))?;
-        log_message_debug(&format!("Loaded config from: {}", system_path.display()));
+        log_debug_message(&format!("Loaded config from: {}", system_path.display()));
         return Ok(config);
     }
 
@@ -155,12 +155,12 @@ fn load_merged_config() -> Result<RuneConfig> {
     if share_path.exists() {
         config = RuneConfig::from_file(&share_path)
             .wrap_err_with(|| format!("failed to load shared config from {}", share_path.display()))?;
-        log_message_debug(&format!("Loaded config from: {}", share_path.display()));
+        log_debug_message(&format!("Loaded config from: {}", share_path.display()));
         return Ok(config);
     }
 
     // If no filesystem configs exist, use internal defaults
-    log_message_debug("Using internal default configuration");
+    log_debug_message("Using internal default configuration");
     Ok(config)
 }
 
@@ -294,26 +294,26 @@ pub fn load_config() -> Result<StasisConfig> {
         return Err(eyre!("no valid idle actions found in config"));
     }
 
-    log_message_debug("Parsed Config:");
-    log_message_debug(&format!("  pre_suspend_command = {:?}", pre_suspend_command));
-    log_message_debug(&format!("  monitor_media = {:?}", monitor_media));
-    log_message_debug(&format!("  ignore_remote_media = {:?}", ignore_remote_media));
-    log_message_debug(&format!(
+    log_debug_message("Parsed Config:");
+    log_debug_message(&format!("  pre_suspend_command = {:?}", pre_suspend_command));
+    log_debug_message(&format!("  monitor_media = {:?}", monitor_media));
+    log_debug_message(&format!("  ignore_remote_media = {:?}", ignore_remote_media));
+    log_debug_message(&format!(
         "  media_blacklist = [{}]",
         media_blacklist.join(", ")
     ));
-    log_message_debug(&format!("  respect_wayland_inhibitors = {:?}", respect_wayland_inhibitors));
-    log_message_debug(&format!("  notify_on_unpause = {:?}", notify_on_unpause));
-    log_message_debug(&format!("  notify_before_action = {:?}", notify_before_action));
-    log_message_debug(&format!("  notify_seconds_before = {:?}", notify_seconds_before));
-    log_message_debug(&format!("  debounce_seconds = {:?}", debounce_seconds));
-    log_message_debug(&format!("  lid_close_action = {:?}", lid_close_action));
-    log_message_debug(&format!("  lid_open_action = {:?}", lid_open_action));
-    log_message_debug(&format!(
+    log_debug_message(&format!("  respect_wayland_inhibitors = {:?}", respect_wayland_inhibitors));
+    log_debug_message(&format!("  notify_on_unpause = {:?}", notify_on_unpause));
+    log_debug_message(&format!("  notify_before_action = {:?}", notify_before_action));
+    log_debug_message(&format!("  notify_seconds_before = {:?}", notify_seconds_before));
+    log_debug_message(&format!("  debounce_seconds = {:?}", debounce_seconds));
+    log_debug_message(&format!("  lid_close_action = {:?}", lid_close_action));
+    log_debug_message(&format!("  lid_open_action = {:?}", lid_open_action));
+    log_debug_message(&format!(
         "  inhibit_apps = [{}]",
         inhibit_apps.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
     ));
-    log_message_debug("  actions:");
+    log_debug_message("  actions:");
     for action in &actions {
         let mut details = format!(
             "    {}: timeout={}s, command=\"{}\"",
@@ -329,7 +329,7 @@ pub fn load_config() -> Result<StasisConfig> {
         if let Some(notification) = &action.notification {
             details.push_str(&format!(", notification=\"{}\"", notification));
         }
-        log_message_debug(&details);
+        log_debug_message(&details);
     }
 
     Ok(StasisConfig {
