@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <b>Join the Official Stasis Discord!</b><br></p>
-
+  <b>join the official stasis <a href="https://discord.gg/97uDMk7reE">Discord</a>!</b><br>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/github/last-commit/saltnpepper97/stasis?style=for-the-badge&color=%2328A745" alt="GitHub last commit"/>
