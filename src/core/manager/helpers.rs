@@ -13,23 +13,6 @@ pub fn wake_idle_tasks(state: &ManagerState) {
     state.notify.notify_waiters();
 }
 
-// Getters and Setters
-pub fn update_lock_state(state: &mut ManagerState, locked: bool) {
-    state.lock_state.is_locked = locked;
-}
-
-pub fn get_compositor_manager(state: &mut ManagerState) -> bool {
-    state.compositor_managed
-}
-
-pub fn set_compositor_manager(state: &mut ManagerState, value: bool) {
-    state.compositor_managed = value;
-}
-
-pub fn get_manual_inhibit(state: &mut ManagerState) -> bool {
-    state.manually_paused
-}
-
 pub async fn run_action(mgr: &mut Manager, action: &IdleActionBlock) {
     log_message(&format!(
         "Action triggered: name=\"{}\" kind={:?} timeout={} command=\"{}\"",

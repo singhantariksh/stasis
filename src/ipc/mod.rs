@@ -9,9 +9,10 @@ use tokio::{
 };
 
 use crate::{
-    config, core::{
+    config, 
+    core::{
         manager::{
-            helpers::{get_manual_inhibit, trigger_all_idle_actions}, 
+            helpers::trigger_all_idle_actions, 
             inhibitors::set_manual_inhibit,
             Manager
         }, 
@@ -167,7 +168,7 @@ pub async fn spawn_ipc_socket_with_listener(
 
                                         "toggle_inhibit" => {
                                             let mut mgr = manager.lock().await;
-                                            let currently_inhibited = get_manual_inhibit(&mut mgr.state);
+                                            let currently_inhibited = mgr.state.get_manual_inhibit();
 
                                             if currently_inhibited {
                                                 set_manual_inhibit(&mut mgr, false).await;

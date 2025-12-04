@@ -23,7 +23,6 @@ pub struct ManagerState {
     pub browser_playing_tab_count: usize,
     pub cfg: Option<Arc<StasisConfig>>,
     pub chassis: ChassisType, 
-    pub compositor_managed: bool,
     pub current_block: String,
     pub dbus_inhibit_active: bool,
     pub debounce: Option<Instant>,
@@ -66,7 +65,6 @@ impl Default for ManagerState {
             browser_playing_tab_count: 0,
             cfg: None,
             chassis: ChassisType::Desktop(DesktopState),
-            compositor_managed: false,
             current_block: "default".to_string(),
             dbus_inhibit_active: false,
             debounce: None,
@@ -144,7 +142,6 @@ impl ManagerState {
             browser_playing_tab_count: 0,
             cfg: Some(cfg.clone()),
             chassis,
-            compositor_managed: false,
             current_block,
             dbus_inhibit_active: false,
             debounce,
@@ -365,6 +362,14 @@ impl ManagerState {
             self.media_playing,
             self.active_inhibitor_count
         ));
+    }
+
+    pub fn get_manual_inhibit(&self) -> bool {
+        self.manually_paused
+    }
+
+    pub fn update_lock_state(&mut self, locked: bool) {
+        self.lock_state.is_locked = locked;
     }
 }
 
