@@ -1,5 +1,5 @@
 use crate::config::model::{IdleAction, IdleActionBlock};
-use crate::log::{log_message, log_debug_message};
+use crate::log::{log_debug_message, log_message};
 use eyre::Result;
 use std::process::Stdio;
 use std::time::Duration;
@@ -64,8 +64,12 @@ pub async fn prepare_action(action: &IdleActionBlock) -> Vec<ActionRequest> {
           log_message("Using logind detection: locked=true");
           true
         }
-        _ => {
-          log_message("logind returned false or unavailable, falling back to process check");
+        Some(false) => {
+          log_message("Using logind detection: locked=false");
+          false
+        }
+        None => {
+          log_message("logind unavailable, falling back to process check");
 
           let is_locked_process = if let Some(ref lock_cmd) = action.lock_command {
             is_process_running(lock_cmd).await
