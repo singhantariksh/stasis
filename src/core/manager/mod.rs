@@ -8,7 +8,6 @@ pub mod tasks;
 
 use std::{sync::Arc, time::{Duration, Instant}};
 use tokio::{
-    task::JoinHandle, 
     time::sleep
 };
 
@@ -19,29 +18,23 @@ use crate::{
         actions::{is_process_running, run_command_detached, run_command_silent},
         brightness::restore_brightness,
         helpers::run_action,
-        inhibitors::{incr_active_inhibitor, decr_active_inhibitor},
+        inhibitors::{decr_active_inhibitor, incr_active_inhibitor}, 
+        tasks::TaskHandles,
     }, 
-    log::{log_message, log_debug_message},
+    log::{log_debug_message, log_message},
 };
 
 pub struct Manager {
     pub state: ManagerState,
-    pub spawned_tasks: Vec<JoinHandle<()>>,
-    pub idle_task_handle: Option<JoinHandle<()>>,
-    pub lock_task_handle: Option<JoinHandle<()>>,
-    pub media_task_handle: Option<JoinHandle<()>>,
-    pub input_task_handle: Option<JoinHandle<()>>,
+    pub tasks: TaskHandles,
+
 }
 
 impl Manager {
     pub fn new(cfg: Arc<StasisConfig>) -> Self {
         Self {
             state: ManagerState::new(cfg),
-            spawned_tasks: Vec::new(),
-            idle_task_handle: None,
-            lock_task_handle: None,
-            media_task_handle: None,
-            input_task_handle: None,
+            tasks: TaskHandles::new(), 
         }
     }
 
@@ -491,25 +484,6 @@ impl Manager {
 
         sleep(Duration::from_millis(200)).await;
 
-        if let Some(handle) = self.idle_task_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.lock_task_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.input_task_handle.take() {
-            handle.abort();
-        }
-
-        // Cancel pending notification
-        if let Some(task) = self.state.pending_notification_task.take() {
-            task.abort();
-        }
-
-        for handle in self.spawned_tasks.drain(..) {
-            handle.abort();
-        }
+        self.tasks.abort_all(); 
     }
 }

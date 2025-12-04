@@ -167,7 +167,7 @@ pub async fn run_command_for_action(
             log_error_message(&format!("Failed to run command '{}': {}", cmd, e));
         }
     });
-    mgr.spawned_tasks.push(spawned);
+    mgr.tasks.spawned.push(spawned);
 }
 
 pub async fn lock_still_active(state: &crate::core::manager::state::ManagerState) -> bool {

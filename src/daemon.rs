@@ -47,9 +47,9 @@ pub async fn run_daemon(listener: UnixListener, verbose: bool) -> Result<()> {
     // Store handles in manager
     {
         let mut mgr = manager.lock().await;
-        mgr.idle_task_handle = Some(idle_handle);
-        mgr.lock_task_handle = Some(lock_handle);
-        mgr.input_task_handle = Some(input_handle);
+        mgr.tasks.idle = Some(idle_handle);
+        mgr.tasks.lock = Some(lock_handle);
+        mgr.tasks.input = Some(input_handle);
     }
     
     // Spawn suspend event listener

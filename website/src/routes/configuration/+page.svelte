@@ -412,7 +412,7 @@ end`;
 
       <h3>Notify on Unpause</h3>
       <p>Stasis has a built in system to notify you whenever it unpauses. Since stasis can be paused for hours on end,<br /> 
-         you might want a notification to run your pause is complete.
+         you might want a notification to run after your pause duration is complete.
       </p>
       <CodeBlock code="notify_on_unpause true" language="rune" />
  
@@ -479,8 +479,8 @@ end`;
     <section id="inhibitors">
       <h2>Inhibitors</h2>
       
-      <h3>Idle Inhibitors</h3>
-      <p>Respect system-wide idle inhibitors from other applications:</p>
+      <h3>Wayland Idle Inhibitors</h3>
+      <p>Respect Wayland idle inhibitors from compositors (NOTE: must be integrated by compositor itself):</p>
       <CodeBlock code={idleInhibitorsCode} language="rune" />
       
       <h3>Application Inhibitors</h3>
@@ -515,7 +515,7 @@ end`;
         <ul>
           <li><code>lock-screen</code> - Lock the screen</li>
           <li><code>suspend</code> - Suspend the system</li>
-          <li><code>custom</code> - Run a custom command</li>
+          <li><code>custom(string)</code> - Run a custom command i.e. lid_close_action "hyprlock"</li>
           <li><code>ignore</code> - Do nothing</li>
         </ul>
       </div>
@@ -524,7 +524,7 @@ end`;
         <strong>Available lid_open_action options:</strong>
         <ul>
           <li><code>wake</code> - Wake the system</li>
-          <li><code>custom</code> - Run a custom command</li>
+          <li><code>custom(string)</code> - Run a custom command</li>
           <li><code>ignore</code> - Do nothing</li>
         </ul>
       </div>

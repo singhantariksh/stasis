@@ -66,7 +66,6 @@
 Description=Stasis Wayland Idle Manager
 PartOf=graphical-session.target
 After=graphical-session.target
-ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=simple
@@ -176,7 +175,7 @@ systemctl --user enable --now stasis.service`;
       <h3>Provided Service File</h3>
       <p>
         Stasis already provides a service file if you installed it via the AUR on Arch Linux
-        To start the service file with your desired compositor first enable it using:
+        It is installed to <code>/usr/lib/systemd/user</code> To start the service file with your desired compositor first enable it using:
       </p>
 
       <CodeBlock code="systemctl --user enable stasis.service" />
