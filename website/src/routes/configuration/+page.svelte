@@ -9,6 +9,7 @@
     { id: 'global', title: 'Global Settings' },
     { id: 'stasis-block', title: 'Stasis Block' },
     { id: 'media', title: 'Media Monitoring' },
+    { id: 'notification', title: 'Notifications'},
     { id: 'inhibitors', title: 'Inhibitors' },
     { id: 'laptop', title: 'Laptop Settings' },
     { id: 'actions', title: 'Idle Actions' },
@@ -68,6 +69,29 @@
   }
   
   // Code examples
+  const libnotifyInstallCode = `# Arch Linux
+sudo pacman -S libnotify
+
+# Debian/Ubuntu
+sudo apt install libnotify-bin
+
+# Fedora
+sudo dnf install libnotify`;
+  const notifyBeforeActionCode = `notify_before_action true
+notify_seconds_before 10`;
+
+  const perActionNotificationCode = `lock_screen:
+  timeout 300
+  command "loginctl lock-session"
+  notification "Locking screen in 10 seconds..."
+end
+
+suspend:
+  timeout 1800
+  command "systemctl suspend"
+  notification "System will suspend in 10 seconds. Move mouse to cancel."
+end`;
+
   const globalSettingsCode = `@author "Your Name"
 @description "Stasis configuration file"
 
@@ -372,6 +396,84 @@ end`;
       <h3>Media Blacklist</h3>
       <p>Ignore specific media players when checking for active playback:</p>
       <CodeBlock code={mediaBlacklistCode} language="rune" />
+    </section>
+
+    <section id="notification">
+      <h2>Notifications</h2>
+ 
+      <div class="warning">
+        <strong>📦 Requirements:</strong>
+        <p>
+          Notification features require <code>libnotify</code> to be installed on your system.
+          Most distributions include this by default, but you may need to install it manually:
+        </p>
+        <CodeBlock code={libnotifyInstallCode} language="bash" />
+      </div>
+
+      <h3>Notify on Unpause</h3>
+      <p>Stasis has a built in system to notify you whenever it unpauses. Since stasis can be paused for hours on end,<br /> 
+         you might want a notification to run your pause is complete.
+      </p>
+      <CodeBlock code="notify_on_unpause true" language="rune" />
+ 
+      <h3>Notify Before Action</h3>
+      <p>
+        Stasis can send notifications before executing idle actions, giving you a warning that an action is about to trigger.
+        This is useful to prevent unexpected screen locks or suspends.
+      </p>
+      <CodeBlock code={notifyBeforeActionCode} language="rune" />
+
+      <div class="info">
+        <strong>How it works:</strong>
+        <ul>
+          <li><code>notify_before_action</code> - Enables the notification system (default: false)</li>
+          <li><code>notify_seconds_before</code> - How many seconds before the action to send the notification (default: 0)</li>
+        </ul>
+      </div>
+
+      <h4>Timeline Example</h4>
+      <p>
+        With <code>debounce_seconds 5</code>, <code>timeout 5</code>, and <code>notify_seconds_before 10</code>:
+      </p>
+
+      <div class="timeline">
+        <div class="timeline-step">
+          <div class="step-time">0s</div>
+          <div class="step-desc">Last user activity detected</div>
+        </div>
+        <div class="timeline-arrow">↓</div>
+        <div class="timeline-step">
+          <div class="step-time">5s</div>
+          <div class="step-desc">Debounce period ends</div>
+        </div>
+        <div class="timeline-arrow">↓</div>
+        <div class="timeline-step highlight">
+          <div class="step-time">10s</div>
+          <div class="step-desc"><strong>Notification fires</strong> (debounce + timeout)</div>
+        </div>
+        <div class="timeline-arrow">↓</div>
+        <div class="timeline-step">
+          <div class="step-time">20s</div>
+          <div class="step-desc">Action executes (notification + notify_seconds_before)</div>
+        </div>
+      </div>
+
+      <h4>Per-Action Notifications</h4>
+      <p>
+        You can customize notification messages for individual actions using the <code>notification</code> parameter:
+      </p>
+      <CodeBlock code={perActionNotificationCode} language="rune" />
+
+<div class="warning">
+  <strong>⚠️ Important Notes:</strong>
+  <ul>
+    <li>The notification fires at the <em>original</em> timeout (debounce + timeout)</li>
+    <li>The action fires <code>notify_seconds_before</code> seconds after the notification</li>
+    <li>If you have user activity during the notification delay, the action is canceled and timers reset</li>
+    <li>Only actions with a configured <code>notification</code> parameter will send notifications</li>
+  </ul>
+</div>
+
     </section>
     
     <section id="inhibitors">
@@ -749,6 +851,64 @@ end`;
     
     code {
       font-size: 0.85em;
+    }
+  }
+
+  .timeline {
+    margin: 24px 0;
+    padding: 20px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border-left: 4px solid var(--accent);
+  }
+
+  .timeline-step {
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    margin: 8px 0;
+  }
+
+  .timeline-step.highlight {
+    background: rgba(168, 85, 247, 0.1);
+    border: 2px solid var(--accent);
+  }
+
+  .step-time {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+  }
+
+  .step-desc {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+  }
+
+  .timeline-arrow {
+    text-align: center;
+    color: var(--accent);
+    font-size: 1.2rem;
+    margin: 4px 0;
+  }
+
+  @media (max-width: 968px) {
+    .timeline {
+      padding: 16px;
+    }
+    
+    .timeline-step {
+      padding: 10px 12px;
+    }
+    
+    .step-time {
+      font-size: 0.85rem;
+    }
+    
+    .step-desc {
+      font-size: 0.9rem;
     }
   }
   

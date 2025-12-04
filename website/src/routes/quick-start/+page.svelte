@@ -361,13 +361,6 @@ spawn-at-startup "stasis"`} />
     color: var(--text-primary);
   }
   
-  h4 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 24px 0 12px 0;
-    color: var(--text-primary);
-  }
- 
   section {
     margin-bottom: 48px;
     scroll-margin-top: 120px;
@@ -476,10 +469,6 @@ spawn-at-startup "stasis"`} />
       margin: 24px 0 10px 0;
     }
     
-    h4 {
-      font-size: 1.05rem;
-      margin: 20px 0 10px 0;
-    }
     
     section {
       margin-bottom: 32px;
@@ -527,8 +516,5 @@ spawn-at-startup "stasis"`} />
       font-size: 1.1rem;
     }
     
-    h4 {
-      font-size: 1rem;
-    }
   }
 </style>
