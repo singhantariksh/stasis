@@ -15,7 +15,6 @@ use crate::log::{log_debug_message, log_error_message, log_message, log_warning_
 const BRIDGE_SOCKET: &str = "/tmp/media_bridge.sock";
 const POLL_INTERVAL_MS: u64 = 1000;
 
-// Use AtomicBool as a shutdown signal instead of just a "running" flag
 static SHUTDOWN_SIGNAL: AtomicBool = AtomicBool::new(false);
 static MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -60,16 +59,13 @@ struct BrowserMediaState {
 pub async fn stop_browser_monitor(manager: Arc<Mutex<Manager>>) {
     log_debug_message("Stopping browser media monitor...");
     
-    // Signal shutdown
     SHUTDOWN_SIGNAL.store(true, Ordering::SeqCst);
-    
-    // Wait a bit for the task to notice and exit
     tokio::time::sleep(Duration::from_millis(100)).await;
     
     // Clear all browser inhibitors
     {
         let mut mgr = manager.lock().await;
-        let prev_tab_count = mgr.state.browser_playing_tab_count;
+        let prev_tab_count = mgr.state.media_bridge.playing_tab_count;
         if prev_tab_count > 0 {
             log_debug_message(&format!(
                 "Clearing {} browser tab inhibitors",
@@ -80,13 +76,10 @@ pub async fn stop_browser_monitor(manager: Arc<Mutex<Manager>>) {
             }
         }
         
-        // Reset browser state
-        mgr.state.browser_playing_tab_count = 0;
-        mgr.state.browser_media_playing = false;
-        mgr.state.media_bridge_active = false;
+        // Reset bridge state
+        mgr.state.media_bridge.reset();
     }
     
-    // Reset flags for next spawn
     MONITOR_RUNNING.store(false, Ordering::SeqCst);
     SHUTDOWN_SIGNAL.store(false, Ordering::SeqCst);
     
@@ -101,13 +94,10 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
         return;
     }
 
-    // Mark media bridge as active and initialize tracking
+    // Activate media bridge and initialize tracking
     {
         let mut mgr = manager.lock().await;
-        mgr.state.media_bridge_active = true;
-        // Initialize browser tab count to 0 when starting
-        mgr.state.browser_playing_tab_count = 0;
-        mgr.state.browser_media_playing = false;
+        mgr.state.media_bridge.activate();
     }
 
     tokio::spawn(async move {
@@ -118,7 +108,6 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
         log_message("Browser media monitor started");
         
         loop {
-            // Check for shutdown signal
             if SHUTDOWN_SIGNAL.load(Ordering::SeqCst) {
                 log_message("Browser media monitor received shutdown signal, exiting");
                 break;
@@ -133,14 +122,12 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                         connected = true;
                     }
                     
-                    // Check if state changed 
                     let state_changed = last_state.as_ref().map(|last| {
                         last.playing != state.playing ||
                         last.tab_count != state.tab_count ||
                         last.playing_tabs != state.playing_tabs
                     }).unwrap_or(true);
 
-                    
                     if state_changed {
                         handle_browser_media_state(manager.clone(), &state).await;
                         
@@ -168,7 +155,6 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                         log_error_message("Lost connection to Firefox MPRIS bridge");
                         connected = false;
                         
-                        // Treat as "no media playing"
                         let empty_state = BrowserMediaState {
                             playing: false,
                             tab_count: 0,
@@ -192,22 +178,20 @@ async fn handle_browser_media_state(
 ) {
     let mut mgr = manager.lock().await;
 
-    // Track number of tabs playing
-    let prev_tab_count = mgr.state.browser_playing_tab_count;
-    let new_tab_count = state.playing_tabs.len();
-
-    // Calculate the delta
-    let delta = new_tab_count as i32 - prev_tab_count as i32;
+    // Update the bridge state and get the delta
+    let delta = mgr.state.media_bridge.update_playing_state(
+        state.playing,
+        state.playing_tabs.len()
+    );
 
     if delta != 0 {
         log_debug_message(&format!(
             "Browser tab count change: {} → {} (delta: {})",
-            prev_tab_count, new_tab_count, delta
+            (mgr.state.media_bridge.playing_tab_count as i32 - delta),
+            mgr.state.media_bridge.playing_tab_count,
+            delta
         ));
     }
-
-    // Update the tab count
-    mgr.state.browser_playing_tab_count = new_tab_count;
 
     // Apply inhibitor changes based on delta
     if delta > 0 {
@@ -222,12 +206,9 @@ async fn handle_browser_media_state(
         for _ in 0..delta.abs() {
             decr_active_inhibitor(&mut mgr).await;
         }
-        if new_tab_count == 0 {
+        if mgr.state.media_bridge.playing_tab_count == 0 {
             mgr.state.media_playing = false;
             mgr.state.media_blocking = false;
         }
     }
-
-    // Update browser media playing flag
-    mgr.state.browser_media_playing = new_tab_count > 0;
 }

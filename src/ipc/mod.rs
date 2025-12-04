@@ -62,7 +62,7 @@ pub async fn spawn_ipc_socket_with_listener(
                                                     let manually_inhibited = mgr.state.manually_paused;
                                                     let paused = mgr.state.paused;
                                                     let media_blocking = mgr.state.media_blocking;
-                                                    let media_bridge_active = mgr.state.media_bridge_active;
+                                                    let media_bridge_active = mgr.state.media_bridge.active;
                                                     let cfg_clone = mgr.state.cfg.clone();
                                                     
                                                     drop(mgr);
@@ -209,7 +209,7 @@ pub async fn spawn_ipc_socket_with_listener(
                                                         let manually_inhibited = mgr.state.manually_paused;
                                                         let paused = mgr.state.paused;
                                                         let media_blocking = mgr.state.media_blocking;
-                                                        let media_bridge_active = mgr.state.media_bridge_active;
+                                                        let media_bridge_active = mgr.state.media_bridge.active;
                                                         let cfg_clone = mgr.state.cfg.clone();
                                                         
                                                         drop(mgr);

@@ -9,6 +9,7 @@ use crate::{
     core::manager::actions::ProcessInfo
 };
 use crate::core::utils::{detect_chassis, ChassisKind};
+use crate::media_bridge::*;
 
 #[derive(Debug)]
 pub struct ManagerState {
@@ -19,8 +20,6 @@ pub struct ManagerState {
     pub app_inhibit_debounce: Option<Instant>,
     pub battery_actions: Vec<IdleActionBlock>,
     pub brightness_device: Option<String>,
-    pub browser_media_playing: bool,
-    pub browser_playing_tab_count: usize,
     pub cfg: Option<Arc<StasisConfig>>,
     pub chassis: ChassisType, 
     pub current_block: String,
@@ -35,11 +34,11 @@ pub struct ManagerState {
     pub max_brightness: Option<u32>,
     pub media_blocking: bool,
     pub media_playing: bool,
-    pub media_bridge_active: bool,
+    pub media_bridge: MediaBridgeState,  // Encapsulated browser media state
     pub notify: Arc<Notify>,
     pub paused: bool,
     pub pending_notification_task: Option<JoinHandle<()>>,
-    pub notification_sent_for_action: Option<usize>, // Track which action index had notification sent
+    pub notification_sent_for_action: Option<usize>,
     pub previous_brightness: Option<u32>,
     pub pre_suspend_command: Option<String>,
     pub resume_queue: Vec<IdleActionBlock>,
@@ -61,8 +60,6 @@ impl Default for ManagerState {
             app_inhibit_debounce: None,
             battery_actions: Vec::new(),
             brightness_device: None,
-            browser_media_playing: false,
-            browser_playing_tab_count: 0,
             cfg: None,
             chassis: ChassisType::Desktop(DesktopState),
             current_block: "default".to_string(),
@@ -76,7 +73,7 @@ impl Default for ManagerState {
             max_brightness: None,
             media_blocking: false,
             media_playing: false,
-            media_bridge_active: false,
+            media_bridge: MediaBridgeState::new(),
             notify: Arc::new(Notify::new()),
             lock_notify: Arc::new(Notify::new()),
             paused: false,
@@ -124,10 +121,9 @@ impl ManagerState {
             ChassisKind::Desktop => ChassisType::Desktop(DesktopState),
         };
 
-        // Initial block - will be updated by power detection
         let current_block = match &chassis {
             ChassisType::Desktop(_) => "default".to_string(),
-            ChassisType::Laptop(_) => "ac".to_string(), // Default to AC, will be corrected by power detection
+            ChassisType::Laptop(_) => "ac".to_string(),
         };
 
         let state = Self {
@@ -138,8 +134,6 @@ impl ManagerState {
             app_inhibit_debounce: None,
             battery_actions,
             brightness_device: None,
-            browser_media_playing: false,
-            browser_playing_tab_count: 0,
             cfg: Some(cfg.clone()),
             chassis,
             current_block,
@@ -153,7 +147,7 @@ impl ManagerState {
             max_brightness: None,
             media_blocking: false,
             media_playing: false,
-            media_bridge_active: false,
+            media_bridge: MediaBridgeState::new(),
             notify: Arc::new(Notify::new()),
             lock_notify: Arc::new(Notify::new()),
             paused: false,
@@ -185,12 +179,10 @@ impl ManagerState {
     pub fn set_on_battery(&mut self, value: bool) {
         if let ChassisType::Laptop(l) = &mut self.chassis {
             l.on_battery = value;
-            // Update current_block when power state changes
             self.update_current_block();
         }
     }
 
-    /// Update current_block based on chassis type and power state
     pub fn update_current_block(&mut self) {
         let new_block = match &self.chassis {
             ChassisType::Desktop(_) => "default".to_string(),
@@ -219,19 +211,14 @@ impl ManagerState {
                 old_block, self.current_block
             ));
             
-            // Reset state when switching blocks
             self.action_index = 0;
             self.instants_triggered = false;
-            
-            // Cancel any pending notification when switching blocks
             self.pending_notification_task = None;
             self.notification_sent_for_action = None;
-            
             self.notify.notify_one();
         }
     }
 
-    /// Get the currently active action list based on current_block
     pub fn get_active_actions(&self) -> &[IdleActionBlock] {
         match self.current_block.as_str() {
             "ac" => &self.ac_actions,
@@ -241,7 +228,6 @@ impl ManagerState {
         }
     }
 
-    /// Get mutable reference to the currently active action list
     pub fn get_active_actions_mut(&mut self) -> &mut Vec<IdleActionBlock> {
         match self.current_block.as_str() {
             "ac" => &mut self.ac_actions,
@@ -251,7 +237,6 @@ impl ManagerState {
         }
     }
 
-    /// Get all instant actions from the currently active action list
     pub fn get_active_instant_actions(&self) -> Vec<IdleActionBlock> {
         self.get_active_actions()
             .iter()
@@ -264,12 +249,9 @@ impl ManagerState {
         self.active_flags = ActiveFlags::default();
         self.previous_brightness = None;
         self.pre_suspend_command = cfg.pre_suspend_command.clone();
-
-        // Cancel any pending notification
         self.pending_notification_task = None;
         self.notification_sent_for_action = None;
 
-        // Split actions into blocks
         let default_actions: Vec<_> = cfg
             .actions
             .iter()
@@ -291,36 +273,26 @@ impl ManagerState {
             .cloned()
             .collect();
 
-        // Replace the old state vectors
         self.default_actions = default_actions;
         self.ac_actions = ac_actions;
         self.battery_actions = battery_actions;
 
-        // Reset last_triggered for all actions
         for actions in [&mut self.default_actions, &mut self.ac_actions, &mut self.battery_actions] {
             for a in actions.iter_mut() {
                 a.last_triggered = None;
             }
         }
 
-        // Update current_block based on new config
         self.update_current_block();
-
-        // Reset instant trigger flag
         self.instants_triggered = false;
         
-        // Reset debounce according to new cfg
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.debounce = Some(Instant::now() + debounce);
 
         self.cfg = Some(Arc::new(cfg.clone()));
         self.lock_state = LockState::from_config(cfg);
         self.last_activity = Instant::now();
-
-        // Reset action index
         self.action_index = 0;
-
-        // Wake idle task to recalc immediately
         self.notify.notify_one();
 
         log_message(&format!(
@@ -331,9 +303,9 @@ impl ManagerState {
 
     /// Get the effective media playing state accounting for both MPRIS and browser
     pub fn is_any_media_playing(&self) -> bool {
-        if self.media_bridge_active {
+        if self.media_bridge.active {
             // When bridge is active, check browser state OR MPRIS (for non-browser players)
-            self.browser_media_playing || self.media_playing
+            self.media_bridge.browser_playing || self.media_playing
         } else {
             // When bridge is not active, just check MPRIS
             self.media_playing
@@ -341,27 +313,13 @@ impl ManagerState {
     }
 
     /// Get the total number of media inhibitors currently active
-    /// This helps with debugging and transition verification
     pub fn get_media_inhibitor_count(&self) -> usize {
-        if self.media_bridge_active {
-            // Browser extension tracks per-tab
-            self.browser_playing_tab_count
-        } else {
-            // MPRIS is binary (0 or 1)
-            if self.media_playing { 1 } else { 0 }
-        }
+        self.media_bridge.inhibitor_count() + if self.media_playing && !self.media_bridge.active { 1 } else { 0 }
     }
 
     /// Log current media state for debugging
     pub fn log_media_state(&self) {
-        crate::log::log_message(&format!(
-            "Media State: bridge_active={}, browser_playing={} (tabs={}), mpris_playing={}, total_inhibitors={}",
-            self.media_bridge_active,
-            self.browser_media_playing,
-            self.browser_playing_tab_count,
-            self.media_playing,
-            self.active_inhibitor_count
-        ));
+        self.media_bridge.log_state(self.media_playing, self.active_inhibitor_count);
     }
 
     pub fn get_manual_inhibit(&self) -> bool {
