@@ -13,7 +13,7 @@ use crate::{
     Manager,
     actions::{is_process_active, is_process_running, is_session_locked_via_logind, run_command_detached},
   },
-  log::{log_message, log_debug_message},
+  log::{log_debug_message, log_message},
 };
 
 pub fn spawn_idle_task(manager: Arc<Mutex<Manager>>) -> JoinHandle<()> {
@@ -106,7 +106,7 @@ pub async fn spawn_lock_watcher(
       // Monitor lock until it ends
       let mut last_state = true; // We know we're locked when entering
       let mut check_count = 0u32;
-      
+
       loop {
         let (process_info, maybe_cmd, was_locked, shutdown, lock_notify) = {
           let mgr = manager.lock().await;
@@ -126,49 +126,53 @@ pub async fn spawn_lock_watcher(
         // Check if lock is still active using logind (primary) or process check (fallback)
         let logind_result = is_session_locked_via_logind().await;
         let still_active = match logind_result {
-            Some(true) => {
-                // Definitely locked
-                true
+          Some(true) => {
+            // Definitely locked
+            true
+          }
+          Some(false) => {
+            // Definitely unlocked according to logind
+            false
+          }
+          None => {
+            // logind query failed - fall back to process check
+            if let Some(ref info) = process_info {
+              is_process_active(info).await
+            } else if let Some(cmd) = maybe_cmd {
+              is_process_running(&cmd).await
+            } else {
+              // Conservative default: assume still locked
+              if check_count == 0 {
+                log_message("No process info or command available for lock fallback, assuming locked");
+              }
+              true
             }
-            _ => {
-                // Either logind returned false or query failed
-                if let Some(ref info) = process_info {
-                    is_process_active(info).await
-                } else if let Some(cmd) = maybe_cmd {
-                    is_process_running(&cmd).await
-                } else {
-                    // Conservative default: assume still locked
-                    if check_count == 0 {
-                        log_message("No process info or command available for lock fallback, assuming locked");
-                    }
-                    true
-                }
-            }
+          }
         };
 
         // Only log on state change (regular log) or every 20 checks (debug log)
         check_count += 1;
         if still_active != last_state {
-            let logind_str = match logind_result {
-                Some(true) => "locked",
-                Some(false) => "unlocked", 
-                None => "unavailable",
-            };
-            log_message(&format!(
-                "Lock state changed: active={} (logind={})",
-                still_active, logind_str
-            ));
-            last_state = still_active;
+          let logind_str = match logind_result {
+            Some(true) => "locked",
+            Some(false) => "unlocked",
+            None => "unavailable",
+          };
+          log_message(&format!(
+            "Lock state changed: active={} (logind={})",
+            still_active, logind_str
+          ));
+          last_state = still_active;
         } else if check_count % 20 == 0 {
-            let logind_str = match logind_result {
-                Some(true) => "locked",
-                Some(false) => "unlocked", 
-                None => "unavailable",
-            };
-            log_debug_message(&format!(
-                "Lock check #{}: active={} (logind={})",
-                check_count, still_active, logind_str
-            ));
+          let logind_str = match logind_result {
+            Some(true) => "locked",
+            Some(false) => "unlocked",
+            None => "unavailable",
+          };
+          log_debug_message(&format!(
+            "Lock check #{}: active={} (logind={})",
+            check_count, still_active, logind_str
+          ));
         }
 
         if !still_active {
