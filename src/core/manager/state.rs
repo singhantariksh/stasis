@@ -34,7 +34,7 @@ pub struct ManagerState {
     pub max_brightness: Option<u32>,
     pub media_blocking: bool,
     pub media_playing: bool,
-    pub media_bridge: MediaBridgeState,  // Encapsulated browser media state
+    pub media_bridge: MediaBridgeState,
     pub notify: Arc<Notify>,
     pub paused: bool,
     pub pending_notification_task: Option<JoinHandle<()>>,
