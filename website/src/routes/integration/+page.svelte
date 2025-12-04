@@ -5,6 +5,7 @@
   let activeSection = $state('');
   
   const sections = [
+    { id: 'quickshell', title: 'Quickshell' },
     { id: 'waybar', title: 'Waybar' }
   ];
   
@@ -43,6 +44,16 @@
   }
   
   // Code examples
+  const quickshellIntegrationCode = `
+   lid_close_action "qs -c noctalia-shell ipc call lockScreen lock && systemctl suspend"
+    
+   ...
+   
+   lock-screen:
+      timeout 60 # 1 min ( 3 min  ) after brightness
+      command "qs -c noctalia-shell ipc call lockScreen lock"
+    end;
+end`;
   const waybarIconCode = `"custom/stasis": {
   "exec": "stasis info --json",
   "format": "{icon}",
@@ -89,6 +100,14 @@
   
   <main class="content">
     <h1>Integration</h1>
+
+    <section id="quickshell">
+      <h2>Quickshell</h2>
+
+      <h3>Example Usage</h3>
+      <p>The provided example is with <a target="_blank" rel="noopener noeferrer" href="https://github.com/noctalia-dev/noctalia-shell">Noctalia shell</a></p>
+      <CodeBlock code={quickshellIntegrationCode} language="rune" />
+    </section>
     
     <section id="waybar">
       <h2>Waybar</h2>
@@ -97,7 +116,7 @@
       <p>To use Stasis with waybar is fairly straightforward. Below is an example custom module for waybar:</p>
       
       <h4>Icon-based Display</h4>
-      <CodeBlock code={waybarIconCode} language="json" />
+      <CodeBlock code={waybarIconCode} language="hjson" />
 
       <h4>Text-based Display</h4>
       <p>Or you can just display text if you don't want icons:</p>
@@ -171,6 +190,11 @@
 /* === CONTENT === */
 .content {
   min-width: 0;
+}
+
+a {
+  text-decoration: none;
+  color: var(--accent);
 }
 
 h1 {
