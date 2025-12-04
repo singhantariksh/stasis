@@ -184,7 +184,7 @@ pub async fn lock_still_active(state: &crate::core::manager::state::ManagerState
 pub async fn trigger_all_idle_actions(mgr: &mut Manager) {
     use crate::config::model::IdleAction;
 
-    let block_name = if !mgr.state.ac_actions.is_empty() || !mgr.state.battery_actions.is_empty() {
+    let block_name = if !mgr.state.action_queue.ac_actions.is_empty() || !mgr.state.action_queue.battery_actions.is_empty() {
         match mgr.state.on_battery() {
             Some(true) => "battery",
             Some(false) => "ac",
@@ -196,9 +196,9 @@ pub async fn trigger_all_idle_actions(mgr: &mut Manager) {
 
     // Clone the actions so we don't borrow mgr mutably while iterating
     let actions_to_trigger: Vec<IdleActionBlock> = match block_name {
-        "ac" => mgr.state.ac_actions.clone(),
-        "battery" => mgr.state.battery_actions.clone(),
-        "default" => mgr.state.default_actions.clone(),
+        "ac" => mgr.state.action_queue.ac_actions.clone(),
+        "battery" => mgr.state.action_queue.battery_actions.clone(),
+        "default" => mgr.state.action_queue.default_actions.clone(),
         _ => unreachable!(),
     };
 
@@ -223,9 +223,9 @@ pub async fn trigger_all_idle_actions(mgr: &mut Manager) {
     // Now update `last_triggered` after all actions are done
     let now = std::time::Instant::now();
     let actions_mut: &mut Vec<IdleActionBlock> = match block_name {
-        "ac" => &mut mgr.state.ac_actions,
-        "battery" => &mut mgr.state.battery_actions,
-        "default" => &mut mgr.state.default_actions,
+        "ac" => &mut mgr.state.action_queue.ac_actions,
+        "battery" => &mut mgr.state.action_queue.battery_actions,
+        "default" => &mut mgr.state.action_queue.default_actions,
         _ => unreachable!(),
     };
 
@@ -233,7 +233,7 @@ pub async fn trigger_all_idle_actions(mgr: &mut Manager) {
         a.last_triggered = Some(now);
     }
 
-    mgr.state.action_index = actions_mut.len().saturating_sub(1);
+    mgr.state.action_queue.action_index = actions_mut.len().saturating_sub(1);
     log_message("All idle actions triggered manually");
 }
 

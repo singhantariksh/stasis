@@ -5,7 +5,7 @@ use zbus::{Connection, fdo::Result as ZbusResult, Proxy, MatchRule};
 use zvariant::Value;
 use crate::core::events::handlers::{handle_event, Event};
 use crate::core::manager::Manager;
-use crate::log::{log_error_message, log_message, log_dbus_message};
+use crate::log::{log_dbus_message, log_debug_message, log_error_message, log_message};
 
 pub async fn listen_for_suspend_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusResult<()> {
     let connection = Connection::system().await?;
@@ -127,7 +127,7 @@ pub async fn listen_for_lock_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusRe
     // Spawn task for Lock signals
     let lock_task = tokio::spawn(async move {
         while let Some(_signal) = lock_stream.next().await {
-            log_message("Received Lock signal from loginctl");
+            log_debug_message("Received Lock signal from loginctl");
             handle_event(&manager_for_lock, Event::LoginctlLock).await;
         }
     });
@@ -135,7 +135,7 @@ pub async fn listen_for_lock_events(idle_manager: Arc<Mutex<Manager>>) -> ZbusRe
     // Spawn task for Unlock signals
     let unlock_task = tokio::spawn(async move {
         while let Some(_signal) = unlock_stream.next().await {
-            log_message("Received Unlock signal from loginctl");
+            log_debug_message("Received Unlock signal from loginctl");
             handle_event(&manager_for_unlock, Event::LoginctlUnlock).await;
         }
     });

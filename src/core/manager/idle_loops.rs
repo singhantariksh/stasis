@@ -13,7 +13,7 @@ use crate::{
     Manager,
     actions::{is_process_active, is_process_running, is_session_locked_via_logind, run_command_detached},
   },
-  log::log_message,
+  log::{log_message, log_debug_message},
 };
 
 pub fn spawn_idle_task(manager: Arc<Mutex<Manager>>) -> JoinHandle<()> {
@@ -97,7 +97,7 @@ pub async fn spawn_lock_watcher(
         }
       }
 
-      log_message("Lock detected — entering lock watcher");
+      log_debug_message("Lock detected — entering lock watcher");
 
       // Give the lock screen time to signal logind before first check
       // This avoids race condition where we check before logind is updated
@@ -146,19 +146,29 @@ pub async fn spawn_lock_watcher(
             }
         };
 
-        // Only log on state change or every 20 checks (10 seconds)
+        // Only log on state change (regular log) or every 20 checks (debug log)
         check_count += 1;
-        if still_active != last_state || check_count % 20 == 0 {
+        if still_active != last_state {
             let logind_str = match logind_result {
                 Some(true) => "locked",
                 Some(false) => "unlocked", 
                 None => "unavailable",
             };
             log_message(&format!(
+                "Lock state changed: active={} (logind={})",
+                still_active, logind_str
+            ));
+            last_state = still_active;
+        } else if check_count % 20 == 0 {
+            let logind_str = match logind_result {
+                Some(true) => "locked",
+                Some(false) => "unlocked", 
+                None => "unavailable",
+            };
+            log_debug_message(&format!(
                 "Lock check #{}: active={} (logind={})",
                 check_count, still_active, logind_str
             ));
-            last_state = still_active;
         }
 
         if !still_active {
@@ -172,10 +182,11 @@ pub async fn spawn_lock_watcher(
           use crate::config::model::IdleAction;
           if let Some(lock_action) = mgr
             .state
+            .action_queue
             .default_actions
             .iter()
-            .chain(mgr.state.ac_actions.iter())
-            .chain(mgr.state.battery_actions.iter())
+            .chain(mgr.state.action_queue.ac_actions.iter())
+            .chain(mgr.state.action_queue.battery_actions.iter())
             .find(|a| matches!(a.kind, IdleAction::LockScreen))
           {
             if let Some(resume_cmd) = &lock_action.resume_command {
@@ -188,7 +199,7 @@ pub async fn spawn_lock_watcher(
 
           mgr.state.lock_state.process_info = None;
           mgr.state.lock_state.post_advanced = false;
-          mgr.state.action_index = 0;
+          mgr.state.action_queue.action_index = 0;
           mgr.state.lock_state.is_locked = false;
 
           mgr.reset().await;

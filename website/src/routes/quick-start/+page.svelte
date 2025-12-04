@@ -215,17 +215,6 @@ systemctl --user enable --now stasis.service`;
     <section id="troubleshooting">
       <h2>Troubleshooting</h2>
       
-      <h3>Service stuck in "activating" state</h3>
-      <p>
-        This usually means the <code>WAYLAND_DISPLAY</code> environment variable isn't available yet. 
-        The service file includes a wait condition, but if issues persist:
-      </p>
-      <CodeBlock code="echo $WAYLAND_DISPLAY
-ls -la /run/user/$(id -u)/wayland-*" />
-      <p>
-        Make sure your compositor has started and the Wayland socket exists before starting Stasis.
-      </p>
-      
       <h3>Service fails with exit code 203 (EXEC)</h3>
       <p>
         This means systemd can't execute the binary. Common causes:
@@ -238,17 +227,6 @@ ls -la /run/user/$(id -u)/wayland-*" />
       <p>Verify the binary location and update the service file:</p>
       <CodeBlock code="which stasis
 # Then update ExecStart= in the service file to match" />
-      
-      <h3>Brightness controls (brightnessctl/light) stop working</h3>
-      <p>
-        This is usually caused by missing environment variables. The updated service file 
-        imports all necessary environment variables from your session. If issues persist:
-      </p>
-      <ul>
-        <li>Make sure you're in the <code>video</code> group</li>
-        <li>Restart the service after editing: <code>systemctl --user restart stasis.service</code></li>
-        <li>Check logs for errors: <code>journalctl --user -u stasis.service -f</code></li>
-      </ul>
       
       <h3>Permission denied errors</h3>
       <p>

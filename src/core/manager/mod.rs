@@ -1,3 +1,4 @@
+pub mod action_queue;
 pub mod actions;
 pub mod brightness;
 pub mod helpers;
@@ -7,21 +8,19 @@ pub mod state;
 pub mod tasks;
 
 use std::{sync::Arc, time::{Duration, Instant}};
-use tokio::{
-    time::sleep
-};
+use tokio::time::sleep;
 
 pub use self::state::ManagerState;
 use crate::{
-    config::model::{IdleAction, StasisConfig}, 
+    config::model::{IdleAction, StasisConfig},
     core::manager::{
         actions::{is_process_running, run_command_detached, run_command_silent},
         brightness::restore_brightness,
         helpers::run_action,
-        inhibitors::{decr_active_inhibitor, incr_active_inhibitor}, 
+        inhibitors::{decr_active_inhibitor, incr_active_inhibitor},
         tasks::TaskHandles,
-    }, 
-    log::{log_debug_message, log_message},
+    },
+    log::{log_debug_message, log_error_message, log_message},
 };
 
 pub struct Manager {
@@ -33,12 +32,12 @@ impl Manager {
     pub fn new(cfg: Arc<StasisConfig>) -> Self {
         Self {
             state: ManagerState::new(cfg),
-            tasks: TaskHandles::new(), 
+            tasks: TaskHandles::new(),
         }
     }
 
     pub async fn trigger_instant_actions(&mut self) {
-        if self.state.instants_triggered {
+        if self.state.action_queue.instants_triggered {
             return;
         }
 
@@ -49,12 +48,11 @@ impl Manager {
             run_action(self, &action).await;
         }
 
-        self.state.instants_triggered = true;
+        self.state.action_queue.instants_triggered = true;
     }
 
     pub fn reset_instant_actions(&mut self) {
-        self.state.instants_triggered = false;
-        log_debug_message("Instant actions reset; they can trigger again");
+        self.state.action_queue.reset_instant_actions();
     }
 
     // Called when libinput service resets (on user activity)
@@ -73,47 +71,29 @@ impl Manager {
                 log_message(&format!("Failed to restore brightness: {}", e));
             }
         }
-        
+
         let now = Instant::now();
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.state.debounce = Some(now + debounce);
         self.state.last_activity = now;
 
         // Cancel any pending notifications
-        self.state.pending_notification_task = None;
-        self.state.notification_sent_for_action = None;
+        self.state.action_queue.clear_notification_state();
 
         // Store values we need before borrowing
         let is_locked = self.state.lock_state.is_locked;
         let cmd_to_check = self.state.lock_state.command.clone();
 
         // Clear only actions that are before or equal to the current stage
-        for actions in [&mut self.state.default_actions, &mut self.state.ac_actions, &mut self.state.battery_actions] {
-            let mut past_lock = false;
-            for a in actions.iter_mut() {
-                if matches!(a.kind, crate::config::model::IdleAction::LockScreen) {
-                    past_lock = true;
-                }
-                // if locked, preserve stages past lock (so dpms/suspend remain offset correctly)
-                if is_locked && past_lock {
-                    continue;
-                }
-
-
-                if a.is_instant() {
-                    continue;
-                }
-          
-                a.last_triggered = None;
-            }
-        }
+        self.state.action_queue.clear_triggered_before_lock(is_locked);
 
         // Use the helper method to get active actions
         let (is_instant, lock_index) = {
             let actions = self.state.get_active_actions_mut();
 
             // Skip instant actions here. handled elsewhere
-            let index = actions.iter()
+            let index = actions
+                .iter()
                 .position(|a| a.last_triggered.is_none())
                 .unwrap_or(actions.len().saturating_sub(1));
 
@@ -121,7 +101,7 @@ impl Manager {
 
             // Find lock index if needed
             let lock_index = if is_locked {
-                actions.iter().position(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen))
+                self.state.action_queue.find_lock_index()
             } else {
                 None
             };
@@ -131,7 +111,7 @@ impl Manager {
 
         // Reset action_index
         if !is_locked {
-            self.state.action_index = 0;
+            self.state.action_queue.reset_index();
         }
 
         if is_instant {
@@ -149,25 +129,25 @@ impl Manager {
 
                 if still_active {
                     // Always advance to one past lock when locked
-                    self.state.action_index = lock_index.saturating_add(1);
-                    
+                    let new_index = lock_index.saturating_add(1);
+                    self.state.action_queue.set_index(new_index);
+
                     let debounce_end = now + debounce;
-                    let new_action_index = self.state.action_index;
                     let actions = self.state.get_active_actions_mut();
-                    if new_action_index < actions.len() {
-                        actions[new_action_index].last_triggered = Some(debounce_end); 
+                    if new_index < actions.len() {
+                        actions[new_index].last_triggered = Some(debounce_end);
                     } else {
                         // If at the end, reset last_triggered for the last action
                         if lock_index < actions.len() {
                             actions[lock_index].last_triggered = Some(debounce_end);
-                        } 
+                        }
                     }
-                    
+
                     self.state.lock_state.post_advanced = true;
-                } 
-            } 
+                }
+            }
         }
-        
+
         self.fire_resume_queue().await;
         self.state.notify.notify_one();
     }
@@ -181,7 +161,7 @@ impl Manager {
         let now = Instant::now();
 
         // Store values we need before borrowing actions
-        let action_index = self.state.action_index;
+        let action_index = self.state.action_queue.action_index;
         let is_locked = self.state.lock_state.is_locked;
         let last_activity = self.state.last_activity;
         let debounce = self.state.debounce;
@@ -227,57 +207,60 @@ impl Manager {
         };
 
         // Extract notification data before spawning task
-        let notification_opt = actions[index].notification.as_ref().map(|n| (n.clone(), actions[index].name.clone()));
+        let notification_opt = actions[index]
+            .notification
+            .as_ref()
+            .map(|n| (n.clone(), actions[index].name.clone()));
 
         // Check if we should schedule notification
-        // Timeline: [idle] -> [debounce] -> [timeout] -> [NOTIFY at original_fire_time] -> [wait notify_seconds] -> [ACTION]
         if notify_before_enabled && notify_seconds > 0 {
             if let Some((notification_msg, action_name)) = notification_opt {
                 let notify_duration = Duration::from_secs(notify_seconds as u64);
-                let already_notified = self.state.notification_sent_for_action == Some(index);
-                
+                let already_notified = self.state.action_queue.notification_sent_for(index);
+
                 // Notification fires at the ORIGINAL fire time
                 // Action fires AFTER the notification delay
                 let actual_action_time = original_fire_time + notify_duration;
-                
+
                 // If we've reached the original fire time but haven't notified yet
                 if now >= original_fire_time && !already_notified {
                     let action_time = actual_action_time;
                     let notify = Arc::clone(&self.state.notify);
-                    
-                    log_message(&format!(
+
+                    log_debug_message(&format!(
                         "Notification time reached for action '{}': sending '{}' (action will fire in {}s)",
                         action_name, notification_msg, notify_seconds
                     ));
-                    
+
                     // Mark that we've sent notification for this action
-                    self.state.notification_sent_for_action = Some(index);
-                    
+                    self.state.action_queue.mark_notification_sent(index);
+
                     // Spawn notification task
                     let task = tokio::spawn(async move {
                         // Send notification immediately
                         let notify_cmd = format!("notify-send -a Stasis '{}'", notification_msg);
                         if let Err(e) = run_command_silent(&notify_cmd).await {
-                            log_message(&format!("Failed to send notification: {}", e));
+                            log_error_message(&format!("Failed to send notification: {}", e));
                         } else {
                             log_message(&format!("Notification sent: {}", notification_msg));
                         }
-                        
+
                         // Wait for the notification delay period
-                        let wait_duration = action_time.checked_duration_since(Instant::now())
+                        let wait_duration = action_time
+                            .checked_duration_since(Instant::now())
                             .unwrap_or(Duration::ZERO);
                         if !wait_duration.is_zero() {
                             tokio::time::sleep(wait_duration).await;
                         }
-                        
+
                         // Wake the idle task to fire the action
                         notify.notify_one();
                     });
-                    
-                    self.state.pending_notification_task = Some(task);
+
+                    self.state.action_queue.pending_notification_task = Some(task);
                     return; // Don't fire action yet
                 }
-                
+
                 // If notification was sent, check if it's time to fire the action
                 if already_notified && now >= actual_action_time {
                     // Fall through to fire the action
@@ -294,7 +277,7 @@ impl Manager {
         }
 
         // Action is ready: clone and mark triggered
-        let (action_clone, actions_len) = {
+        let (action_clone, _actions_len) = {
             let actions = self.state.get_active_actions_mut();
             let action_clone = actions[index].clone();
             actions[index].last_triggered = Some(now);
@@ -302,55 +285,45 @@ impl Manager {
         }; // Borrow ends here
 
         // Clear notification task since action is firing
-        self.state.pending_notification_task = None;
-        self.state.notification_sent_for_action = None;
+        self.state.action_queue.clear_notification_state();
 
         // Advance index
-        self.state.action_index += 1;
-        if self.state.action_index < actions_len {
-            // Only mark next action triggered after it actually fires
-            self.state.resume_commands_fired = false;
-        } else {
-            self.state.action_index = actions_len - 1;
-        }
+        self.state.action_queue.advance_index();
 
         // Add to resume queue if needed
-        if !matches!(action_clone.kind, IdleAction::LockScreen) && action_clone.resume_command.is_some() {
-            self.state.resume_queue.push(action_clone.clone());
-        }
+        self.state.action_queue.queue_resume(action_clone.clone());
 
         // Fire the action (without blocking notification)
         run_action(self, &action_clone).await;
     }
 
     pub async fn fire_resume_queue(&mut self) {
-        if self.state.resume_queue.is_empty() {
+        if self.state.action_queue.resume_queue.is_empty() {
             return;
         }
 
-        log_message(&format!("Firing {} queued resume command(s)...", self.state.resume_queue.len()));
+        log_message(&format!(
+            "Firing {} queued resume command(s)...",
+            self.state.action_queue.resume_queue.len()
+        ));
 
-        for action in self.state.resume_queue.drain(..) {
+        for action in self.state.action_queue.resume_queue.drain(..) {
             if let Some(resume_cmd) = &action.resume_command {
                 log_message(&format!("Running resume command for action: {}", action.name));
                 if let Err(e) = run_command_detached(resume_cmd).await {
-                    log_message(&format!("Failed to run resume command '{}': {}", resume_cmd, e));
+                    log_message(&format!(
+                        "Failed to run resume command '{}': {}",
+                        resume_cmd, e
+                    ));
                 }
             }
         }
 
-        self.state.resume_queue.clear();
+        self.state.action_queue.clear_resume_queue();
     }
 
     pub fn next_action_instant(&self) -> Option<Instant> {
         if self.state.paused || self.state.manually_paused {
-            return None;
-        }
-
-        // Use helper method to get active actions
-        let actions = self.state.get_active_actions();
-
-        if actions.is_empty() {
             return None;
         }
 
@@ -361,58 +334,17 @@ impl Manager {
             (false, 0)
         };
 
-        let mut min_time: Option<Instant> = None;
-
-        for (i, action) in actions.iter().enumerate() {
-            // Skip lock if already locked
-            if matches!(action.kind, IdleAction::LockScreen) && self.state.lock_state.is_locked {
-                continue;
-            }
-
-            // Calculate the ORIGINAL fire time (where notification would fire)
-            let timeout = Duration::from_secs(action.timeout as u64);
-            let original_fire_time = if let Some(last_trig) = action.last_triggered {
-                // Already triggered: timeout from when it last fired
-                last_trig + timeout
-            } else if i > 0 {
-                // Not first action: fire relative to previous action
-                if let Some(prev_trig) = actions[i - 1].last_triggered {
-                    prev_trig + timeout
-                } else {
-                    // Previous hasn't fired yet, shouldn't happen but fallback
-                    self.state.last_activity + timeout
-                }
-            } else {
-                // First action: use debounce + timeout
-                let base = self.state.debounce.unwrap_or(self.state.last_activity);
-                base + timeout
-            };
-
-            // Determine when we need to wake up
-            let next_time = if notify_before_enabled && action.notification.is_some() {
-                // If notification not yet sent for this action, wake at original fire time
-                // If already sent, wake at actual action time (original + notify delay)
-                if self.state.notification_sent_for_action == Some(i) {
-                    let notify_duration = Duration::from_secs(notify_seconds as u64);
-                    original_fire_time + notify_duration
-                } else {
-                    original_fire_time
-                }
-            } else {
-                original_fire_time
-            };
-
-            min_time = Some(match min_time {
-                None => next_time,
-                Some(current_min) => current_min.min(next_time),
-            });
-        }
-
-        min_time
+        self.state.action_queue.next_action_time(
+            self.state.lock_state.is_locked,
+            self.state.last_activity,
+            self.state.debounce,
+            notify_before_enabled,
+            notify_seconds.try_into().unwrap(),
+        )
     }
 
     pub async fn advance_past_lock(&mut self) {
-        log_message("Advancing state past lock stage...");
+        log_debug_message("Advancing state past lock stage...");
         self.state.lock_state.post_advanced = true;
         self.state.lock_state.last_advanced = Some(Instant::now());
     }
@@ -431,7 +363,7 @@ impl Manager {
         if manually {
             if self.state.manually_paused {
                 self.state.manually_paused = false;
-                
+
                 if self.state.active_inhibitor_count == 0 {
                     self.state.paused = false;
                     log_message("Idle timers manually resumed");
@@ -465,7 +397,8 @@ impl Manager {
         };
 
         // sync check (pactl + mpris).
-        let playing = crate::core::services::media::check_media_playing(ignore_remote, &media_blacklist, false, );
+        let playing =
+            crate::core::services::media::check_media_playing(ignore_remote, &media_blacklist, false);
 
         // Only change state via the helpers so behaviour stays consistent:
         if playing && !self.state.media_playing {
@@ -483,6 +416,6 @@ impl Manager {
 
         sleep(Duration::from_millis(200)).await;
 
-        self.tasks.abort_all(); 
+        self.tasks.abort_all();
     }
 }

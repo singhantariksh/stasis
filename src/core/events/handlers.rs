@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::{config::model::{IdleAction, LidCloseAction, LidOpenAction}, core::manager::{helpers::{run_action, wake_idle_tasks}, Manager}};
+use crate::{config::model::{IdleAction, LidCloseAction, LidOpenAction}, core::manager::{Manager, helpers::{run_action, wake_idle_tasks}}, log::log_debug_message};
 use crate::log::log_message;
 
 pub enum Event {
@@ -25,7 +25,7 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
         Event::ACConnected => {
             let mut mgr = manager.lock().await;
             mgr.state.set_on_battery(false);
-            mgr.state.action_index = 0;
+            mgr.state.action_queue.action_index = 0;
             
             mgr.reset_instant_actions();
             mgr.trigger_instant_actions().await;
@@ -35,7 +35,7 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
         Event::ACDisconnected => {
             let mut mgr = manager.lock().await;
             mgr.state.set_on_battery(true);
-            mgr.state.action_index = 0;
+            mgr.state.action_queue.action_index = 0;
 
             mgr.reset_instant_actions();
             mgr.trigger_instant_actions().await;
@@ -173,7 +173,7 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
                 match crate::core::manager::actions::run_command_detached(&lock_cmd).await {
                     Ok(pid) => {
                         mgr.state.lock_state.process_info = Some(pid.clone());
-                        log_message(&format!("Lock command started with PID {}", pid.pid));
+                        log_debug_message(&format!("Lock command started with PID {}", pid.pid));
                     }
                     Err(e) => {
                         log_message(&format!("Failed to run lock-command: {}", e));
@@ -192,7 +192,7 @@ pub async fn handle_event(manager: &Arc<Mutex<Manager>>, event: Event) {
 
         Event::LoginctlUnlock => {
             let mut mgr = manager.lock().await;
-            log_message("loginctl unlock-session received — resetting state...");
+            log_debug_message("loginctl unlock-session received — resetting state...");
             
             // Reset the manager state as if user activity occurred
             mgr.reset().await;

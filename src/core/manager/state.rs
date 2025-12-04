@@ -1,51 +1,63 @@
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{sync::Arc, time::Instant};
 
 use tokio::sync::Notify;
-use tokio::task::JoinHandle;
 
 use crate::{
-    config::model::{IdleActionBlock, StasisConfig}, 
+    config::model::StasisConfig,
     log::log_message,
-    core::manager::actions::ProcessInfo
+    core::manager::actions::ProcessInfo,
+    core::manager::action_queue::ActionQueue,
 };
 use crate::core::utils::{detect_chassis, ChassisKind};
 use crate::media_bridge::*;
 
 #[derive(Debug)]
 pub struct ManagerState {
-    pub ac_actions: Vec<IdleActionBlock>,
-    pub action_index: usize,
-    pub active_flags: ActiveFlags,
-    pub active_inhibitor_count: u32,
-    pub app_inhibit_debounce: Option<Instant>,
-    pub battery_actions: Vec<IdleActionBlock>,
-    pub brightness_device: Option<String>,
+    // Configuration
     pub cfg: Option<Arc<StasisConfig>>,
-    pub chassis: ChassisType, 
-    pub current_block: String,
-    pub dbus_inhibit_active: bool,
-    pub debounce: Option<Instant>,
-    pub default_actions: Vec<IdleActionBlock>,
-    pub instants_triggered: bool,
+
+    // Action management (extracted into separate struct)
+    pub action_queue: ActionQueue,
+
+    // Timing
     pub last_activity: Instant,
+    pub debounce: Option<Instant>,
+    pub start_time: Instant,
+
+    // Chassis and power state
+    pub chassis: ChassisType,
+
+    // Lock state
     pub lock_state: LockState,
     pub lock_notify: Arc<Notify>,
+
+    // Pause/inhibit state
+    pub paused: bool,
     pub manually_paused: bool,
-    pub max_brightness: Option<u32>,
+    pub active_inhibitor_count: u32,
+    pub dbus_inhibit_active: bool,
+    pub app_inhibit_debounce: Option<Instant>,
+
+    // Media state
     pub media_blocking: bool,
     pub media_playing: bool,
     pub media_bridge: MediaBridgeState,
-    pub notify: Arc<Notify>,
-    pub paused: bool,
-    pub pending_notification_task: Option<JoinHandle<()>>,
-    pub notification_sent_for_action: Option<usize>,
+
+    // Brightness
+    pub brightness_device: Option<String>,
+    pub max_brightness: Option<u32>,
     pub previous_brightness: Option<u32>,
+
+    // Suspend
     pub pre_suspend_command: Option<String>,
-    pub resume_queue: Vec<IdleActionBlock>,
-    pub resume_commands_fired: bool,
-    pub shutdown_flag: Arc<Notify>,
-    pub start_time: Instant,
     pub suspend_occured: bool,
+
+    // Active flags
+    pub active_flags: ActiveFlags,
+
+    // Notifications
+    pub notify: Arc<Notify>,
+    pub shutdown_flag: Arc<Notify>,
 }
 
 impl Default for ManagerState {
@@ -53,116 +65,73 @@ impl Default for ManagerState {
         let now = Instant::now();
 
         Self {
-            ac_actions: Vec::new(),
-            action_index: 0,
-            active_flags: ActiveFlags::default(),
-            active_inhibitor_count: 0,
-            app_inhibit_debounce: None,
-            battery_actions: Vec::new(),
-            brightness_device: None,
             cfg: None,
-            chassis: ChassisType::Desktop(DesktopState),
-            current_block: "default".to_string(),
-            dbus_inhibit_active: false,
+            action_queue: ActionQueue::default(),
+            last_activity: now,
             debounce: None,
-            default_actions: Vec::new(),
-            instants_triggered: false,
-            last_activity: now, 
+            start_time: now,
+            chassis: ChassisType::Desktop(DesktopState),
             lock_state: LockState::default(),
+            lock_notify: Arc::new(Notify::new()),
+            paused: false,
             manually_paused: false,
-            max_brightness: None,
+            active_inhibitor_count: 0,
+            dbus_inhibit_active: false,
+            app_inhibit_debounce: None,
             media_blocking: false,
             media_playing: false,
             media_bridge: MediaBridgeState::new(),
-            notify: Arc::new(Notify::new()),
-            lock_notify: Arc::new(Notify::new()),
-            paused: false,
-            pending_notification_task: None,
-            notification_sent_for_action: None,
+            brightness_device: None,
+            max_brightness: None,
             previous_brightness: None,
             pre_suspend_command: None,
-            resume_queue: Vec::new(),
-            resume_commands_fired: false,
-            shutdown_flag: Arc::new(Notify::new()),
-            start_time: now,
             suspend_occured: false,
+            active_flags: ActiveFlags::default(),
+            notify: Arc::new(Notify::new()),
+            shutdown_flag: Arc::new(Notify::new()),
         }
     }
 }
 
 impl ManagerState {
-    pub fn new(cfg: Arc<StasisConfig>) -> Self { 
-        let default_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| !a.name.starts_with("ac.") && !a.name.starts_with("battery."))
-            .cloned()
-            .collect();
-
-        let ac_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| a.name.starts_with("ac."))
-            .cloned()
-            .collect();
-
-        let battery_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| a.name.starts_with("battery."))
-            .cloned()
-            .collect();
-
+    pub fn new(cfg: Arc<StasisConfig>) -> Self {
         let now = Instant::now();
-        let debounce = Some(now + Duration::from_secs(cfg.debounce_seconds as u64));
+        let debounce = Some(now + std::time::Duration::from_secs(cfg.debounce_seconds as u64));
 
         let chassis = match detect_chassis() {
             ChassisKind::Laptop => ChassisType::Laptop(LaptopState { on_battery: false }),
             ChassisKind::Desktop => ChassisType::Desktop(DesktopState),
         };
 
-        let current_block = match &chassis {
-            ChassisType::Desktop(_) => "default".to_string(),
-            ChassisType::Laptop(_) => "ac".to_string(),
-        };
+        let is_laptop = matches!(chassis, ChassisType::Laptop(_));
+        let action_queue = ActionQueue::new(&cfg, is_laptop);
 
-        let state = Self {
-            ac_actions,
-            action_index: 0,
-            active_flags: ActiveFlags::default(),
-            active_inhibitor_count: 0,
-            app_inhibit_debounce: None,
-            battery_actions,
-            brightness_device: None,
+        Self {
             cfg: Some(cfg.clone()),
-            chassis,
-            current_block,
-            dbus_inhibit_active: false,
-            debounce,
-            default_actions,
-            instants_triggered: false,
+            action_queue,
             last_activity: now,
+            debounce,
+            start_time: now,
+            chassis,
             lock_state: LockState::from_config(&cfg),
+            lock_notify: Arc::new(Notify::new()),
+            paused: false,
             manually_paused: false,
-            max_brightness: None,
+            active_inhibitor_count: 0,
+            dbus_inhibit_active: false,
+            app_inhibit_debounce: None,
             media_blocking: false,
             media_playing: false,
             media_bridge: MediaBridgeState::new(),
-            notify: Arc::new(Notify::new()),
-            lock_notify: Arc::new(Notify::new()),
-            paused: false,
-            pending_notification_task: None,
-            notification_sent_for_action: None,
+            brightness_device: None,
+            max_brightness: None,
             previous_brightness: None,
             pre_suspend_command: cfg.pre_suspend_command.clone(),
-            resume_queue: Vec::new(),
-            resume_commands_fired: false,
-            shutdown_flag: Arc::new(Notify::new()),
-            start_time: now,
             suspend_occured: false,
-        };
-
-        state
+            active_flags: ActiveFlags::default(),
+            notify: Arc::new(Notify::new()),
+            shutdown_flag: Arc::new(Notify::new()),
+        }
     }
 
     pub fn is_laptop(&self) -> bool {
@@ -186,140 +155,72 @@ impl ManagerState {
     pub fn update_current_block(&mut self) {
         let new_block = match &self.chassis {
             ChassisType::Desktop(_) => "default".to_string(),
-            ChassisType::Laptop(state) => {
-                if state.on_battery {
-                    if !self.battery_actions.is_empty() {
-                        "battery".to_string()
-                    } else {
-                        "default".to_string()
-                    }
-                } else {
-                    if !self.ac_actions.is_empty() {
-                        "ac".to_string()
-                    } else {
-                        "default".to_string()
-                    }
-                }
-            }
+            ChassisType::Laptop(state) => self.action_queue.determine_block(state.on_battery),
         };
 
-        if new_block != self.current_block {
-            let old_block = self.current_block.clone();
-            self.current_block = new_block;
-            log_message(&format!(
-                "Switched active block: {} -> {}",
-                old_block, self.current_block
-            ));
-            
-            self.action_index = 0;
-            self.instants_triggered = false;
-            self.pending_notification_task = None;
-            self.notification_sent_for_action = None;
+        if self.action_queue.switch_block(new_block) {
             self.notify.notify_one();
         }
     }
 
-    pub fn get_active_actions(&self) -> &[IdleActionBlock] {
-        match self.current_block.as_str() {
-            "ac" => &self.ac_actions,
-            "battery" => &self.battery_actions,
-            "default" => &self.default_actions,
-            _ => &self.default_actions,
-        }
+    // Convenience accessors that delegate to action_queue
+    pub fn get_active_actions(&self) -> &[crate::config::model::IdleActionBlock] {
+        self.action_queue.get_active_actions()
     }
 
-    pub fn get_active_actions_mut(&mut self) -> &mut Vec<IdleActionBlock> {
-        match self.current_block.as_str() {
-            "ac" => &mut self.ac_actions,
-            "battery" => &mut self.battery_actions,
-            "default" => &mut self.default_actions,
-            _ => &mut self.default_actions,
-        }
+    pub fn get_active_actions_mut(&mut self) -> &mut Vec<crate::config::model::IdleActionBlock> {
+        self.action_queue.get_active_actions_mut()
     }
 
-    pub fn get_active_instant_actions(&self) -> Vec<IdleActionBlock> {
-        self.get_active_actions()
-            .iter()
-            .filter(|a| a.is_instant())
-            .cloned()
-            .collect()
+    pub fn get_active_instant_actions(&self) -> Vec<crate::config::model::IdleActionBlock> {
+        self.action_queue.get_active_instant_actions()
     }
 
     pub async fn update_from_config(&mut self, cfg: &StasisConfig) {
         self.active_flags = ActiveFlags::default();
         self.previous_brightness = None;
         self.pre_suspend_command = cfg.pre_suspend_command.clone();
-        self.pending_notification_task = None;
-        self.notification_sent_for_action = None;
 
-        let default_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| !a.name.starts_with("ac.") && !a.name.starts_with("battery."))
-            .cloned()
-            .collect();
+        let is_laptop = self.is_laptop();
+        self.action_queue.update_from_config(cfg, is_laptop);
 
-        let ac_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| a.name.starts_with("ac."))
-            .cloned()
-            .collect();
-
-        let battery_actions: Vec<_> = cfg
-            .actions
-            .iter()
-            .filter(|a| a.name.starts_with("battery."))
-            .cloned()
-            .collect();
-
-        self.default_actions = default_actions;
-        self.ac_actions = ac_actions;
-        self.battery_actions = battery_actions;
-
-        for actions in [&mut self.default_actions, &mut self.ac_actions, &mut self.battery_actions] {
-            for a in actions.iter_mut() {
-                a.last_triggered = None;
-            }
-        }
-
-        self.update_current_block();
-        self.instants_triggered = false;
-        
-        let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
+        let debounce = std::time::Duration::from_secs(cfg.debounce_seconds as u64);
         self.debounce = Some(Instant::now() + debounce);
 
         self.cfg = Some(Arc::new(cfg.clone()));
         self.lock_state = LockState::from_config(cfg);
         self.last_activity = Instant::now();
-        self.action_index = 0;
         self.notify.notify_one();
 
         log_message(&format!(
             "Idle timers reloaded from config (active block: {})",
-            self.current_block
+            self.action_queue.current_block
         ));
     }
 
     /// Get the effective media playing state accounting for both MPRIS and browser
     pub fn is_any_media_playing(&self) -> bool {
         if self.media_bridge.active {
-            // When bridge is active, check browser state OR MPRIS (for non-browser players)
             self.media_bridge.browser_playing || self.media_playing
         } else {
-            // When bridge is not active, just check MPRIS
             self.media_playing
         }
     }
 
     /// Get the total number of media inhibitors currently active
     pub fn get_media_inhibitor_count(&self) -> usize {
-        self.media_bridge.inhibitor_count() + if self.media_playing && !self.media_bridge.active { 1 } else { 0 }
+        self.media_bridge.inhibitor_count()
+            + if self.media_playing && !self.media_bridge.active {
+                1
+            } else {
+                0
+            }
     }
 
     /// Log current media state for debugging
     pub fn log_media_state(&self) {
-        self.media_bridge.log_state(self.media_playing, self.active_inhibitor_count);
+        self.media_bridge
+            .log_state(self.media_playing, self.active_inhibitor_count);
     }
 
     pub fn get_manual_inhibit(&self) -> bool {
@@ -328,6 +229,71 @@ impl ManagerState {
 
     pub fn update_lock_state(&mut self, locked: bool) {
         self.lock_state.is_locked = locked;
+    }
+
+
+    pub fn instants_triggered(&self) -> bool {
+        self.action_queue.instants_triggered
+    }
+
+    pub fn set_instants_triggered(&mut self, value: bool) {
+        self.action_queue.instants_triggered = value;
+    }
+
+    pub fn action_index(&self) -> usize {
+        self.action_queue.action_index
+    }
+
+    pub fn set_action_index(&mut self, value: usize) {
+        self.action_queue.action_index = value;
+    }
+
+    pub fn pending_notification_task(&self) -> &Option<tokio::task::JoinHandle<()>> {
+        &self.action_queue.pending_notification_task
+    }
+
+    pub fn pending_notification_task_mut(&mut self) -> &mut Option<tokio::task::JoinHandle<()>> {
+        &mut self.action_queue.pending_notification_task
+    }
+
+    pub fn notification_sent_for_action(&self) -> Option<usize> {
+        self.action_queue.notification_sent_for_action
+    }
+
+    pub fn set_notification_sent_for_action(&mut self, value: Option<usize>) {
+        self.action_queue.notification_sent_for_action = value;
+    }
+
+    pub fn resume_queue(&self) -> &Vec<crate::config::model::IdleActionBlock> {
+        &self.action_queue.resume_queue
+    }
+
+    pub fn resume_queue_mut(&mut self) -> &mut Vec<crate::config::model::IdleActionBlock> {
+        &mut self.action_queue.resume_queue
+    }
+
+    pub fn resume_commands_fired(&self) -> bool {
+        self.action_queue.resume_commands_fired
+    }
+
+    pub fn set_resume_commands_fired(&mut self, value: bool) {
+        self.action_queue.resume_commands_fired = value;
+    }
+
+    pub fn default_actions(&self) -> &Vec<crate::config::model::IdleActionBlock> {
+        &self.action_queue.default_actions
+    }
+
+    pub fn ac_actions(&self) -> &Vec<crate::config::model::IdleActionBlock> {
+        &self.action_queue.ac_actions
+    }
+
+    pub fn battery_actions(&self) -> &Vec<crate::config::model::IdleActionBlock> {
+        &self.action_queue.battery_actions
+    }
+
+    pub fn current_block(&self) -> &str {
+        &self.action_queue.current_block
     }
 }
 
@@ -375,8 +341,11 @@ impl Default for LockState {
 impl LockState {
     pub fn from_config(cfg: &crate::config::model::StasisConfig) -> Self {
         use crate::config::model::IdleAction;
-        
-        let lock_action = cfg.actions.iter().find(|a| a.kind == IdleAction::LockScreen);
+
+        let lock_action = cfg
+            .actions
+            .iter()
+            .find(|a| a.kind == IdleAction::LockScreen);
 
         let command = lock_action.map(|a| {
             if let Some(ref lock_cmd) = a.lock_command {

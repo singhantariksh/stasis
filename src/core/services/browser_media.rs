@@ -10,7 +10,7 @@ use crate::core::manager::{
     inhibitors::{incr_active_inhibitor, decr_active_inhibitor},
     Manager
 };
-use crate::log::{log_debug_message, log_error_message, log_message, log_warning_message};
+use crate::log::{log_debug_message, log_message, log_warning_message};
 
 const BRIDGE_SOCKET: &str = "/tmp/media_bridge.sock";
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -139,12 +139,12 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                                 state.playing_tabs
                             ));
                         } else if state.tab_count > 0 {
-                            log_message(&format!(
+                            log_debug_message(&format!(
                                 "Browser media stopped ({} tabs with media, none playing)",
                                 state.tab_count
                             ));
                         } else if last_state.is_some() {
-                            log_message("Browser media stopped (no tabs with media)");
+                            log_debug_message("Browser media stopped (no tabs with media)");
                         }
                     }
                     
@@ -152,7 +152,7 @@ pub async fn spawn_browser_media_monitor(manager: Arc<Mutex<Manager>>) {
                 }
                 Err(_e) => {
                     if connected {
-                        log_error_message("Lost connection to Firefox MPRIS bridge");
+                        log_warning_message("Lost connection to Firefox MPRIS bridge");
                         connected = false;
                         
                         let empty_state = BrowserMediaState {
