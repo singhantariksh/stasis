@@ -22,17 +22,9 @@ pub async fn is_session_locked_via_logind() -> Option<bool> {
     Ok(output) => {
       let output_str = String::from_utf8_lossy(&output.stdout);
       let is_locked = output_str.trim() == "b true";
-      log_message(&format!(
-        "logind LockedHint check: {} (raw: {})",
-        is_locked,
-        output_str.trim()
-      ));
       Some(is_locked)
     }
-    Err(e) => {
-      log_message(&format!("Failed to check logind LockedHint: {}", e));
-      None
-    }
+    Err(_) => None,
   }
 }
 
@@ -62,20 +54,18 @@ pub async fn prepare_action(action: &IdleActionBlock) -> Vec<ActionRequest> {
         vec![]
       }
     }
+
     IdleAction::LockScreen => {
       // Check lock state using systemd logind DBus
       let logind_result = is_session_locked_via_logind().await;
 
       let is_locked = match logind_result {
-        Some(locked) => {
-          // logind query succeeded - use its result as authoritative
-          log_message(&format!("Using logind detection: locked={}", locked));
-          locked
+        Some(true) => {
+          log_message("Using logind detection: locked=true");
+          true
         }
-        None => {
-          // logind query failed - fall back to process check
-          // NOTE: This is flawed for nested commands (e.g., quickshell, shell scripts) but it is kept as a fallback for systems without working logind
-          log_message("logind unavailable, falling back to process check (may be inaccurate for nested commands)");
+        _ => {
+          log_message("logind returned false or unavailable, falling back to process check");
 
           let is_locked_process = if let Some(ref lock_cmd) = action.lock_command {
             is_process_running(lock_cmd).await
@@ -96,6 +86,7 @@ pub async fn prepare_action(action: &IdleActionBlock) -> Vec<ActionRequest> {
         vec![ActionRequest::RunCommand(action.command.clone())]
       }
     }
+
     _ => {
       if cmd.trim().is_empty() {
         vec![]
@@ -199,12 +190,6 @@ pub async fn is_process_active(info: &ProcessInfo) -> bool {
   // Strategy 2: Check process group for any surviving members
   if let Some(pids) = get_process_group_members(info.pgid).await {
     if !pids.is_empty() {
-      log_message(&format!(
-        "Original PID {} dead, but process group {} has {} member(s)",
-        info.pid,
-        info.pgid,
-        pids.len()
-      ));
       return true;
     }
   }
@@ -212,7 +197,6 @@ pub async fn is_process_active(info: &ProcessInfo) -> bool {
   // Strategy 3: If we know the expected process name, search for it
   if let Some(ref name) = info.expected_process_name {
     if is_process_running(name).await {
-      log_message(&format!("Process group empty, but found '{}' by name", name));
       return true;
     }
   }

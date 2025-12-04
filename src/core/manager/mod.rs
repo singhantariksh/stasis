@@ -27,7 +27,6 @@ use crate::{
 pub struct Manager {
     pub state: ManagerState,
     pub tasks: TaskHandles,
-
 }
 
 impl Manager {
